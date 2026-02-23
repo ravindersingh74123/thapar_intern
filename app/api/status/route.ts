@@ -10,6 +10,24 @@
 //   });
 // }
 
+
+
+
+
+// // app/api/status/route.ts
+// import { NextResponse } from "next/server";
+// import { downloadState } from "../lib/downloader";
+
+// export async function GET() {
+//   return NextResponse.json({
+//     progress: downloadState.progress,
+//     files: downloadState.files,
+//     extractedCount: downloadState.extractedData.length,
+//   });
+// }
+
+
+
 // app/api/status/route.ts
 import { NextResponse } from "next/server";
 import { downloadState } from "../lib/downloader";
@@ -17,6 +35,8 @@ import { downloadState } from "../lib/downloader";
 export async function GET() {
   return NextResponse.json({
     progress: downloadState.progress,
+    currentCategory: downloadState.currentCategory,
+    categories: downloadState.categories,
     files: downloadState.files,
     extractedCount: downloadState.extractedData.length,
   });
