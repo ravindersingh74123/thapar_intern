@@ -1,0 +1,75 @@
+[
+  {
+    "image_path": "downloads\\2025\\overall\\image\\IR-O-U-0234.jpg",
+    "year": "2025",
+    "category": "overall",
+    "institute_name": "; Manipal Academy of Higher Education-Manipal",
+    "institute_code": "IR-O-U-0234",
+    "table": {
+      "SS": {
+        "score": "18.93",
+        "total": "20.00"
+      },
+      "FSR": {
+        "score": "25.00",
+        "total": "25.00"
+      },
+      "FQE": {
+        "score": "17.56",
+        "total": "20.00"
+      },
+      "FRU": {
+        "score": "11.95",
+        "total": "20.00"
+      },
+      "OE+MIR": {
+        "score": "6.00",
+        "total": "15.00"
+      },
+      "PU": {
+        "score": "23.80",
+        "total": "35.00"
+      },
+      "QP": {
+        "score": "25.92",
+        "total": "35.00"
+      },
+      "IPR": {
+        "score": "7.00",
+        "total": "15.00"
+      },
+      "FPPP": {
+        "score": "5.03",
+        "total": "15.00"
+      },
+      "GUE": {
+        "score": "60.00",
+        "total": "60.00"
+      },
+      "GPHD": {
+        "score": "18.52",
+        "total": "40.00"
+      },
+      "RD": {
+        "score": "18.66",
+        "total": "30.00"
+      },
+      "WD": {
+        "score": "28.11",
+        "total": "30.00"
+      },
+      "ESCS": {
+        "score": "0.94",
+        "total": "20.00"
+      },
+      "PCS": {
+        "score": "20.00",
+        "total": "20.00"
+      },
+      "PR": {
+        "score": "20.28",
+        "total": "100.00"
+      }
+    }
+  }
+]
