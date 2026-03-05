@@ -1413,11 +1413,403 @@
 
 
 
+// import axios from "axios";
+// import puppeteer, { Browser } from "puppeteer";
+// import fs from "fs";
+// import path from "path";
+// import { extractFromPdf, ExtractedData } from "./extractor";
+// import { extractFromImage, ImageRow, buildExcel } from "./image-extractor";
+
+// export type FileStatus =
+//   | "pending"
+//   | "downloading"
+//   | "extracting"
+//   | "done"
+//   | "failed";
+
+// export interface FileItem {
+//   name: string;
+//   status: FileStatus;
+//   category: string;
+// }
+
+// export interface CategoryProgress {
+//   name: string;
+//   slug: string;
+//   total: number;
+//   done: number;
+//   status: "pending" | "active" | "done";
+// }
+
+// export interface DownloadState {
+//   progress: number;
+//   currentCategory: string;
+//   categories: CategoryProgress[];
+//   files: FileItem[];
+//   extractedData: ExtractedData[];
+//   imageData: ImageRow[];
+// }
+
+// export const downloadState: DownloadState = {
+//   progress: 0,
+//   currentCategory: "",
+//   categories: [],
+//   files: [],
+//   extractedData: [],
+//   imageData: [],
+// };
+
+// /* ─── URL helpers ─────────────────────────────────────── */
+
+// function getRankingIndexUrl(year: string): string {
+//   const customUrls: Record<string, string> = {
+//     "2016": "https://www.nirfindia.org/Rankings/2016/Ranking2016.html",
+//     "2017": "https://www.nirfindia.org/Rankings/2017/Ranking2017.html",
+//     "2018": "https://www.nirfindia.org/Rankings/2018/Ranking2018.html",
+//     "2019": "https://www.nirfindia.org/Rankings/2019/Ranking2019.html",
+//     "2020": "https://www.nirfindia.org/Rankings/2020/Ranking2020.html",
+//   };
+//   return (
+//     customUrls[year] ??
+//     `https://www.nirfindia.org/Rankings/${year}/Ranking.html`
+//   );
+// }
+
+// function slugify(label: string): string {
+//   return (
+//     label
+//       .toLowerCase()
+//       .replace(/ranking/gi, "")
+//       .replace(/[^a-z0-9]+/g, "-")
+//       .replace(/^-+|-+$/g, "")
+//       .trim() || "misc"
+//   );
+// }
+
+// /* ─── discover category links from the ranking index ──── */
+
+// interface CategoryLink {
+//   label: string;
+//   slug: string;
+//   url: string;
+// }
+
+// async function discoverCategories(
+//   browser: Browser,
+//   year: string,
+// ): Promise<CategoryLink[]> {
+//   const indexUrl = getRankingIndexUrl(year);
+//   // Base for resolving relative hrefs — same folder as the index page
+//   const baseUrl = indexUrl.substring(0, indexUrl.lastIndexOf("/") + 1);
+
+//   const page = await browser.newPage();
+
+//   try {
+//     await page.goto(indexUrl, { waitUntil: "networkidle2", timeout: 30000 });
+
+//     // Category links are inside col-* divs with class "p-circle-N".
+//     // Their hrefs are RELATIVE filenames like "UniversityRanking.html".
+//     // We grab the <a> href + the sibling <p> text as the label.
+//     const links = await page.evaluate(() => {
+//       const results: { label: string; href: string }[] = [];
+//       const seen = new Set<string>();
+
+//       document.querySelectorAll("div[class*='col-lg'] a").forEach((a) => {
+//         const href = a.getAttribute("href")?.trim() ?? "";
+//         if (!href || !href.endsWith(".html") || seen.has(href)) return;
+
+//         const parent = a.closest("div");
+//         const fileName = href.split("/").pop() ?? "";
+
+//         // Derive raw label from filename
+//         let raw = fileName.replace(".html", "").toLowerCase();
+
+//         // Normalize known slugs
+//         const map: Record<string, string> = {
+//           univ: "University",
+//           universityranking: "University",
+//           engg: "Engineering",
+//           engineeringranking: "Engineering",
+//           mgmt: "Management",
+//           managementranking: "Management",
+//           pharma: "Pharmacy",
+//           pharmaranking: "Pharmacy",
+//         };
+
+//         const label = map[raw] ?? raw;
+
+//         seen.add(href);
+//         results.push({ label, href });
+//       });
+
+//       return results;
+//     });
+
+//     return links.map(({ label, href }) => {
+//       // href is a bare filename like "UniversityRanking.html" or a relative path
+//       const absoluteUrl = href.startsWith("http") ? href : `${baseUrl}${href}`;
+
+//       return { label, slug: slugify(label), url: absoluteUrl };
+//     });
+//   } finally {
+//     await page.close();
+//   }
+// }
+
+// /* ─── scrape PDF + image links from a category page ───── */
+
+// interface PageLinks {
+//   pdfs: string[];
+//   images: string[];
+// }
+
+// async function scrapePageLinks(
+//   browser: Browser,
+//   categoryUrl: string,
+//   year: string,
+// ): Promise<PageLinks> {
+//   const page = await browser.newPage();
+//   try {
+//     await page.goto(categoryUrl, { waitUntil: "networkidle2", timeout: 30000 });
+
+//     return await page.evaluate((y) => {
+//       const pdfs: string[] = [];
+//       const images: string[] = [];
+
+//       document.querySelectorAll("a").forEach((a) => {
+//         const href = a.getAttribute("href") ?? "";
+//         if (!href) return;
+
+//         if (
+//           href.includes(`/nirfpdfcdn/${y}/pdf/`) ||
+//           href.includes("https://www.nirfindia.org/nirfpdfcdn/2017/") ||
+//           href.includes("https://www.nirfindia.org/nirfpdfcdn/2016/")
+//         ) {
+//           pdfs.push(href);
+//         }
+
+//         if (href.includes(`/nirfpdfcdn/${y}/graph/`)) {
+//           images.push(href);
+//         }
+//       });
+
+//       return { pdfs, images };
+//     }, year);
+//   } finally {
+//     await page.close();
+//   }
+// }
+
+// /* ─── download a single file ──────────────────────────── */
+
+// async function downloadFile(
+//   url: string,
+//   destFolder: string,
+//   fileIndex: number,
+//   category: string,
+//   extractionOutputPath: string,
+//   imageXLSXPath: string,
+// ): Promise<void> {
+//   try {
+//     downloadState.files[fileIndex].status = "downloading";
+
+//     const response = await axios({
+//       url,
+//       method: "GET",
+//       responseType: "stream",
+//       headers: {
+//         "User-Agent": "Mozilla/5.0 (compatible; NIRF-Downloader/1.0)",
+//       },
+//     });
+
+//     const filename = path.basename(new URL(url).pathname);
+//     const filePath = path.join(destFolder, filename);
+//     downloadState.files[fileIndex].name = filename;
+
+//     if (!fs.existsSync(filePath)) {
+//       const writer = fs.createWriteStream(filePath);
+//       response.data.pipe(writer);
+//       await new Promise<void>((resolve, reject) => {
+//         writer.on("finish", resolve);
+//         writer.on("error", reject);
+//       });
+//     }
+
+//     const ext = url.toLowerCase().split(".").pop() ?? "";
+
+//     if (ext === "pdf") {
+//       downloadState.files[fileIndex].status = "extracting";
+//       const extracted = await extractFromPdf(filePath);
+//       downloadState.extractedData.push(extracted);
+//       fs.writeFileSync(
+//         extractionOutputPath,
+//         JSON.stringify(downloadState.extractedData, null, 2),
+//       );
+//     } else if (["jpg", "jpeg", "png"].includes(ext)) {
+//       downloadState.files[fileIndex].status = "extracting";
+//       const imgData = await extractFromImage(filePath);
+//       if (imgData) {
+//         downloadState.imageData.push(imgData);
+//         fs.writeFileSync(imageXLSXPath, buildExcel(downloadState.imageData));
+//       }
+//     }
+
+//     downloadState.files[fileIndex].status = "done";
+//   } catch (err) {
+//     console.error("Failed:", url, err);
+//     downloadState.files[fileIndex].status = "failed";
+//   }
+// }
+
+// /* ─── main ────────────────────────────────────────────── */
+
+// export async function startDownload(year: string): Promise<void> {
+//   downloadState.progress = 0;
+//   downloadState.currentCategory = "";
+//   downloadState.categories = [];
+//   downloadState.files = [];
+//   downloadState.extractedData = [];
+//   downloadState.imageData = [];
+
+//   const baseFolder = path.join(process.cwd(), "downloads", year);
+//   const extractionOutputPath = path.join(baseFolder, "extracted-data.json");
+//   const imageXLSXPath = path.join(baseFolder, "image-data.xlsx");
+//   fs.mkdirSync(baseFolder, { recursive: true });
+//   fs.writeFileSync(extractionOutputPath, "[]");
+
+//   let browser: Browser | undefined;
+
+//   try {
+//     browser = await puppeteer.launch({ headless: true });
+
+//     // ── Phase 1: discover categories ──────────────────────
+//     console.log(`[${year}] Discovering categories...`);
+//     const categories = await discoverCategories(browser, year);
+
+//     if (categories.length === 0) {
+//       console.warn(`[${year}] No categories found`);
+//       downloadState.progress = 100;
+//       return;
+//     }
+
+//     console.log(
+//       `[${year}] Categories:`,
+//       categories.map((c) => c.label),
+//     );
+
+//     downloadState.categories = categories.map((c) => ({
+//       name: c.label,
+//       slug: c.slug,
+//       total: 0,
+//       done: 0,
+//       status: "pending" as const,
+//     }));
+
+//     // ── Phase 2: scrape ALL category pages first to get the
+//     //    true total file count BEFORE any downloading starts.
+//     //    This prevents progress hitting 100% after the first
+//     //    category finishes and the frontend stopping polling.
+//     console.log(`[${year}] Pre-scanning all categories for file counts...`);
+
+//     const categoryLinks: { pdfs: string[]; images: string[] }[] = [];
+
+//     for (let ci = 0; ci < categories.length; ci++) {
+//       const cat = categories[ci];
+//       const { pdfs, images } = await scrapePageLinks(browser, cat.url, year);
+//       categoryLinks.push({ pdfs, images });
+
+//       downloadState.categories[ci].total = pdfs.length + images.length;
+
+//       // Pre-allocate all file slots so the UI can show them immediately
+//       for (let i = 0; i < pdfs.length + images.length; i++) {
+//         downloadState.files.push({
+//           name: "pending...",
+//           status: "pending",
+//           category: cat.slug,
+//         });
+//       }
+
+//       console.log(
+//         `[${year}/${cat.slug}] Found: ${pdfs.length} PDFs, ${images.length} images`,
+//       );
+//     }
+
+//     const totalFiles = downloadState.files.length;
+//     let doneFiles = 0;
+
+//     console.log(`[${year}] Total files across all categories: ${totalFiles}`);
+
+//     // ── Phase 3: download everything now that total is known
+//     let fileOffset = 0;
+
+//     for (let ci = 0; ci < categories.length; ci++) {
+//       const cat = categories[ci];
+//       const { pdfs, images } = categoryLinks[ci];
+
+//       downloadState.currentCategory = cat.label;
+//       downloadState.categories[ci].status = "active";
+
+//       const pdfFolder = path.join(baseFolder, cat.slug, "pdf");
+//       const imageFolder = path.join(baseFolder, cat.slug, "image");
+//       fs.mkdirSync(pdfFolder, { recursive: true });
+//       fs.mkdirSync(imageFolder, { recursive: true });
+
+//       for (let i = 0; i < pdfs.length; i++) {
+//         await downloadFile(
+//           pdfs[i],
+//           pdfFolder,
+//           fileOffset + i,
+//           cat.slug,
+//           extractionOutputPath,
+//           imageXLSXPath,
+//         );
+//         doneFiles++;
+//         downloadState.categories[ci].done++;
+//         downloadState.progress = Math.round((doneFiles / totalFiles) * 100);
+//       }
+
+//       for (let i = 0; i < images.length; i++) {
+//         await downloadFile(
+//           images[i],
+//           imageFolder,
+//           fileOffset + pdfs.length + i,
+//           cat.slug,
+//           extractionOutputPath,
+//           imageXLSXPath,
+//         );
+//         doneFiles++;
+//         downloadState.categories[ci].done++;
+//         downloadState.progress = Math.round((doneFiles / totalFiles) * 100);
+//       }
+
+//       fileOffset += pdfs.length + images.length;
+//       downloadState.categories[ci].status = "done";
+//       console.log(`[${year}/${cat.slug}] Complete`);
+//     }
+
+//     downloadState.progress = 100;
+//     console.log(
+//       `[${year}] All done. ${downloadState.extractedData.length} records extracted.`,
+//     );
+//   } catch (err) {
+//     console.error("startDownload error:", err);
+//     downloadState.progress = 100;
+//   } finally {
+//     if (browser) await browser.close();
+//   }
+// }
+
+
+
+
+
+
+
 import axios from "axios";
 import puppeteer, { Browser } from "puppeteer";
 import fs from "fs";
 import path from "path";
-import { extractFromPdf, ExtractedData } from "./extractor";
+import { extractFromPdf, getCSVPath, resetCSVFile, ExtractedData } from "./extractor";
 import { extractFromImage, ImageRow, buildExcel } from "./image-extractor";
 
 export type FileStatus =
@@ -1459,7 +1851,7 @@ export const downloadState: DownloadState = {
   imageData: [],
 };
 
-/* ─── URL helpers ─────────────────────────────────────── */
+/* ─── URL helpers ─────────────────────────────────────────── */
 
 function getRankingIndexUrl(year: string): string {
   const customUrls: Record<string, string> = {
@@ -1486,30 +1878,25 @@ function slugify(label: string): string {
   );
 }
 
-/* ─── discover category links from the ranking index ──── */
+/* ─── Category link discovery ─────────────────────────────── */
 
 interface CategoryLink {
-  label: string;
-  slug: string;
+  label: string;   // display name, e.g. "University", "Engineering"
+  slug: string;    // folder name, e.g. "university", "engineering"
   url: string;
 }
 
 async function discoverCategories(
   browser: Browser,
-  year: string,
+  year: string
 ): Promise<CategoryLink[]> {
   const indexUrl = getRankingIndexUrl(year);
-  // Base for resolving relative hrefs — same folder as the index page
   const baseUrl = indexUrl.substring(0, indexUrl.lastIndexOf("/") + 1);
-
   const page = await browser.newPage();
 
   try {
     await page.goto(indexUrl, { waitUntil: "networkidle2", timeout: 30000 });
 
-    // Category links are inside col-* divs with class "p-circle-N".
-    // Their hrefs are RELATIVE filenames like "UniversityRanking.html".
-    // We grab the <a> href + the sibling <p> text as the label.
     const links = await page.evaluate(() => {
       const results: { label: string; href: string }[] = [];
       const seen = new Set<string>();
@@ -1518,26 +1905,35 @@ async function discoverCategories(
         const href = a.getAttribute("href")?.trim() ?? "";
         if (!href || !href.endsWith(".html") || seen.has(href)) return;
 
-        const parent = a.closest("div");
         const fileName = href.split("/").pop() ?? "";
+        const raw = fileName.replace(".html", "").toLowerCase();
 
-        // Derive raw label from filename
-        let raw = fileName.replace(".html", "").toLowerCase();
-
-        // Normalize known slugs
         const map: Record<string, string> = {
-          univ: "University",
+          univ:              "University",
           universityranking: "University",
-          engg: "Engineering",
-          engineeringranking: "Engineering",
-          mgmt: "Management",
+          engg:              "Engineering",
+          engineeringranking:"Engineering",
+          mgmt:              "Management",
           managementranking: "Management",
-          pharma: "Pharmacy",
-          pharmaranking: "Pharmacy",
+          pharma:            "Pharmacy",
+          pharmaranking:     "Pharmacy",
+          overall:           "Overall",
+          overallranking:    "Overall",
+          college:           "College",
+          collegeranking:    "College",
+          medical:           "Medical",
+          medicalranking:    "Medical",
+          law:               "Law",
+          lawranking:        "Law",
+          arch:              "Architecture",
+          archranking:       "Architecture",
+          dental:            "Dental",
+          dentalranking:     "Dental",
+          research:          "Research",
+          researchranking:   "Research",
         };
 
         const label = map[raw] ?? raw;
-
         seen.add(href);
         results.push({ label, href });
       });
@@ -1546,9 +1942,7 @@ async function discoverCategories(
     });
 
     return links.map(({ label, href }) => {
-      // href is a bare filename like "UniversityRanking.html" or a relative path
       const absoluteUrl = href.startsWith("http") ? href : `${baseUrl}${href}`;
-
       return { label, slug: slugify(label), url: absoluteUrl };
     });
   } finally {
@@ -1556,7 +1950,7 @@ async function discoverCategories(
   }
 }
 
-/* ─── scrape PDF + image links from a category page ───── */
+/* ─── Scrape PDF + image links from a category page ──────── */
 
 interface PageLinks {
   pdfs: string[];
@@ -1566,7 +1960,7 @@ interface PageLinks {
 async function scrapePageLinks(
   browser: Browser,
   categoryUrl: string,
-  year: string,
+  year: string
 ): Promise<PageLinks> {
   const page = await browser.newPage();
   try {
@@ -1600,15 +1994,16 @@ async function scrapePageLinks(
   }
 }
 
-/* ─── download a single file ──────────────────────────── */
+/* ─── Download + extract a single file ───────────────────── */
 
 async function downloadFile(
   url: string,
   destFolder: string,
   fileIndex: number,
-  category: string,
-  extractionOutputPath: string,
-  imageXLSXPath: string,
+  categoryLabel: string,  // full display name, e.g. "Overall", "University"
+  year: string,
+  csvPath: string,
+  imageXLSXPath: string
 ): Promise<void> {
   try {
     downloadState.files[fileIndex].status = "downloading";
@@ -1617,9 +2012,7 @@ async function downloadFile(
       url,
       method: "GET",
       responseType: "stream",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; NIRF-Downloader/1.0)",
-      },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; NIRF-Downloader/1.0)" },
     });
 
     const filename = path.basename(new URL(url).pathname);
@@ -1638,14 +2031,15 @@ async function downloadFile(
     const ext = url.toLowerCase().split(".").pop() ?? "";
 
     if (ext === "pdf") {
+      // Parse PDF → append rows to nirf-pdf-data.csv immediately
       downloadState.files[fileIndex].status = "extracting";
-      const extracted = await extractFromPdf(filePath);
+      const extracted = await extractFromPdf(filePath, csvPath, year, categoryLabel);
       downloadState.extractedData.push(extracted);
-      fs.writeFileSync(
-        extractionOutputPath,
-        JSON.stringify(downloadState.extractedData, null, 2),
+      console.log(
+        `[PDF] ${extracted.instituteCode} | ${extracted.instituteName} | ${extracted.rowsWritten} rows written`
       );
     } else if (["jpg", "jpeg", "png"].includes(ext)) {
+      // Parse image → rewrite image-data.xlsx immediately
       downloadState.files[fileIndex].status = "extracting";
       const imgData = await extractFromImage(filePath);
       if (imgData) {
@@ -1661,7 +2055,7 @@ async function downloadFile(
   }
 }
 
-/* ─── main ────────────────────────────────────────────── */
+/* ─── Main ────────────────────────────────────────────────── */
 
 export async function startDownload(year: string): Promise<void> {
   downloadState.progress = 0;
@@ -1671,18 +2065,21 @@ export async function startDownload(year: string): Promise<void> {
   downloadState.extractedData = [];
   downloadState.imageData = [];
 
-  const baseFolder = path.join(process.cwd(), "downloads", year);
-  const extractionOutputPath = path.join(baseFolder, "extracted-data.json");
+  const baseFolder    = path.join(process.cwd(), "downloads", year);
   const imageXLSXPath = path.join(baseFolder, "image-data.xlsx");
+
   fs.mkdirSync(baseFolder, { recursive: true });
-  fs.writeFileSync(extractionOutputPath, "[]");
+
+  // Wipe the CSV so a fresh run starts clean
+  resetCSVFile(baseFolder);
+  const csvPath = getCSVPath(baseFolder);
 
   let browser: Browser | undefined;
 
   try {
     browser = await puppeteer.launch({ headless: true });
 
-    // ── Phase 1: discover categories ──────────────────────
+    // Phase 1 — discover categories
     console.log(`[${year}] Discovering categories...`);
     const categories = await discoverCategories(browser, year);
 
@@ -1692,10 +2089,7 @@ export async function startDownload(year: string): Promise<void> {
       return;
     }
 
-    console.log(
-      `[${year}] Categories:`,
-      categories.map((c) => c.label),
-    );
+    console.log(`[${year}] Categories:`, categories.map((c) => c.label));
 
     downloadState.categories = categories.map((c) => ({
       name: c.label,
@@ -1705,41 +2099,28 @@ export async function startDownload(year: string): Promise<void> {
       status: "pending" as const,
     }));
 
-    // ── Phase 2: scrape ALL category pages first to get the
-    //    true total file count BEFORE any downloading starts.
-    //    This prevents progress hitting 100% after the first
-    //    category finishes and the frontend stopping polling.
-    console.log(`[${year}] Pre-scanning all categories for file counts...`);
-
+    // Phase 2 — pre-scan to get accurate total file count
+    console.log(`[${year}] Pre-scanning categories...`);
     const categoryLinks: { pdfs: string[]; images: string[] }[] = [];
 
     for (let ci = 0; ci < categories.length; ci++) {
       const cat = categories[ci];
       const { pdfs, images } = await scrapePageLinks(browser, cat.url, year);
       categoryLinks.push({ pdfs, images });
-
       downloadState.categories[ci].total = pdfs.length + images.length;
 
-      // Pre-allocate all file slots so the UI can show them immediately
       for (let i = 0; i < pdfs.length + images.length; i++) {
-        downloadState.files.push({
-          name: "pending...",
-          status: "pending",
-          category: cat.slug,
-        });
+        downloadState.files.push({ name: "pending...", status: "pending", category: cat.slug });
       }
 
-      console.log(
-        `[${year}/${cat.slug}] Found: ${pdfs.length} PDFs, ${images.length} images`,
-      );
+      console.log(`[${year}/${cat.slug}] ${pdfs.length} PDFs, ${images.length} images`);
     }
 
     const totalFiles = downloadState.files.length;
     let doneFiles = 0;
+    console.log(`[${year}] Total files: ${totalFiles}`);
 
-    console.log(`[${year}] Total files across all categories: ${totalFiles}`);
-
-    // ── Phase 3: download everything now that total is known
+    // Phase 3 — download and extract
     let fileOffset = 0;
 
     for (let ci = 0; ci < categories.length; ci++) {
@@ -1749,19 +2130,16 @@ export async function startDownload(year: string): Promise<void> {
       downloadState.currentCategory = cat.label;
       downloadState.categories[ci].status = "active";
 
-      const pdfFolder = path.join(baseFolder, cat.slug, "pdf");
+      const pdfFolder   = path.join(baseFolder, cat.slug, "pdf");
       const imageFolder = path.join(baseFolder, cat.slug, "image");
-      fs.mkdirSync(pdfFolder, { recursive: true });
+      fs.mkdirSync(pdfFolder,   { recursive: true });
       fs.mkdirSync(imageFolder, { recursive: true });
 
       for (let i = 0; i < pdfs.length; i++) {
         await downloadFile(
-          pdfs[i],
-          pdfFolder,
-          fileOffset + i,
-          cat.slug,
-          extractionOutputPath,
-          imageXLSXPath,
+          pdfs[i], pdfFolder, fileOffset + i,
+          cat.label,   // ← full display name goes into the CSV "Category" column
+          year, csvPath, imageXLSXPath
         );
         doneFiles++;
         downloadState.categories[ci].done++;
@@ -1770,12 +2148,9 @@ export async function startDownload(year: string): Promise<void> {
 
       for (let i = 0; i < images.length; i++) {
         await downloadFile(
-          images[i],
-          imageFolder,
-          fileOffset + pdfs.length + i,
-          cat.slug,
-          extractionOutputPath,
-          imageXLSXPath,
+          images[i], imageFolder, fileOffset + pdfs.length + i,
+          cat.label,
+          year, csvPath, imageXLSXPath
         );
         doneFiles++;
         downloadState.categories[ci].done++;
@@ -1789,7 +2164,8 @@ export async function startDownload(year: string): Promise<void> {
 
     downloadState.progress = 100;
     console.log(
-      `[${year}] All done. ${downloadState.extractedData.length} records extracted.`,
+      `[${year}] Done. ${downloadState.extractedData.length} PDFs → nirf-pdf-data.csv | ` +
+      `${downloadState.imageData.length} images → image-data.xlsx`
     );
   } catch (err) {
     console.error("startDownload error:", err);
