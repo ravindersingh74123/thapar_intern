@@ -1,0 +1,3743 @@
+// "use client";
+// /**
+//  * NIRFCharts.tsx
+//  * ─────────────────────────────────────────────────────────────────────────────
+//  * Trend-line charts for every InstituteDetail tab.
+//  * Every chart is null-safe — renders nothing when data is insufficient.
+//  *
+//  * Exports:
+//  *   ScoresTrendChart      — one line per NIRF parameter (SS, FSR…) over ranking years
+//  *   IntakeTrendChart      — one line per program over academic years
+//  *   PlacementTrendChart   — placed / salary / higher studies per program over grad years
+//  *   FinancialTrendChart   — one line per expenditure line item over academic years (₹ Cr)
+//  *   ResearchTrendChart    — projects / agencies / amount per section over academic years
+//  */
+
+// import React from "react";
+// import {
+//   LineChart, Line,
+//   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+// } from "recharts";
+
+// // ── Theme ──────────────────────────────────────────────────────────────────────
+// const PALETTE = [
+//   "#c0392b", "#1a7a6e", "#7d4fa8", "#b5651d",
+//   "#2e6da4", "#5a8a3a", "#c0762b", "#2b6dc0",
+//   "#8a5a2e", "#3a8a5a", "#6d2eb5", "#b52e6d",
+// ];
+// const MONO    = "'IBM Plex Mono', monospace";
+// const BORDER  = "#e4e2dd";
+// const INK300  = "#a8a49c";
+// const CRIMSON = "#c0392b";
+
+// // ── Shared primitives ─────────────────────────────────────────────────────────
+// export function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+//   return (
+//     <div style={{
+//       background: "var(--white)", border: `1px solid ${BORDER}`,
+//       padding: "16px 20px 20px", marginBottom: 14,
+//       boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+//     }}>
+//       <p style={{
+//         fontFamily: MONO, fontSize: "0.6rem", textTransform: "uppercase",
+//         letterSpacing: "0.1em", color: CRIMSON,
+//         marginBottom: 14, paddingBottom: 6, borderBottom: `1px solid ${BORDER}`,
+//       }}>
+//         {title}
+//       </p>
+//       {children}
+//     </div>
+//   );
+// }
+
+// function Tip({ active, payload, label, fmt }: any) {
+//   if (!active || !payload?.length) return null;
+//   return (
+//     <div style={{ background: "#1a1916", border: "1px solid #3d3b36", fontFamily: MONO, fontSize: "0.68rem", color: "#f7f6f3" }}>
+//       <p style={{ padding: "6px 10px 4px", color: INK300, borderBottom: "1px solid #3d3b36", marginBottom: 4 }}>{label}</p>
+//       {payload.map((p: any, i: number) => (
+//         <p key={i} style={{ padding: "2px 10px", color: p.color }}>
+//           {p.name}: <strong>{fmt ? fmt(p.value, p.name) : p.value?.toLocaleString("en-IN")}</strong>
+//         </p>
+//       ))}
+//       <div style={{ height: 6 }} />
+//     </div>
+//   );
+// }
+
+// const AX = { axisLine: false, tickLine: false, tick: { fontFamily: MONO, fontSize: 10, fill: INK300 } };
+
+// // ── Helpers ───────────────────────────────────────────────────────────────────
+// const BAD_V = new Set(["", "nan", "<na>", "-", "n/a", "na", "null", "undefined", "none"]);
+// const isBAD = (v: any) => BAD_V.has(String(v ?? "").trim().toLowerCase());
+// const toNum = (v: any) => { const n = Number(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? null : n; };
+// function baseYear(y: string) { return y.trim().match(/^(\d{4}-\d{2})/)?.[1] ?? y.trim(); }
+// function isRealYear(y: any) { const s = String(y ?? "").trim(); return !isBAD(s) && /^\d{4}(-\d{2})?/.test(s); }
+// function sortYrs(years: string[]) {
+//   return [...years].sort((a, b) => { const ay = parseInt(a), by = parseInt(b); return isNaN(ay) || isNaN(by) ? a.localeCompare(b) : ay - by; });
+// }
+// const shorten = (s: string, n = 22) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+// export interface RawMetric { metric: string; year: string; value: string; ranking_year: number; program: string; }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 1. SCORES — one line per NIRF parameter over ranking years
+// // ─────────────────────────────────────────────────────────────────────────────
+// const PARAM_SHORT: Record<string, string> = {
+//   img_ss_score: "SS", img_fsr_score: "FSR", img_fqe_score: "FQE", img_fru_score: "FRU",
+//   img_oe_mir_score: "OE/MIR", img_pu_score: "PU", img_qp_score: "QP", img_ipr_score: "IPR",
+//   img_fppp_score: "FPPP", img_gue_score: "GUE", img_gphd_score: "GPHD", img_rd_score: "RD",
+//   img_wd_score: "WD", img_escs_score: "ESCS", img_pcs_score: "PCS", img_pr_score: "PR",
+// };
+// const PARAM_FULL: Record<string, string> = {
+//   SS: "Student Strength", FSR: "Faculty–Student Ratio", FQE: "Faculty Qualification",
+//   FRU: "Faculty Research", "OE/MIR": "Outreach & Inclusivity", PU: "Perception",
+//   QP: "Quality Publication", IPR: "IPR & Patents", FPPP: "Footprint of Projects",
+//   GUE: "Graduate Performance", GPHD: "PhD Graduates", RD: "R&D", WD: "Wider Impact",
+//   ESCS: "Economic & Social", PCS: "Peer Perception", PR: "Perception",
+// };
+
+// export function ScoresTrendChart({
+//   scoresByYear,
+//   imgCols,
+// }: {
+//   scoresByYear: Record<number, Record<string, unknown>>;
+//   imgCols: string[];
+// }) {
+//   const years = Object.keys(scoresByYear).map(Number).sort((a, b) => a - b);
+//   if (years.length < 2 || !imgCols.length) return null;
+
+//   const data = years.map(yr => {
+//     const row = scoresByYear[yr] as Record<string, unknown>;
+//     const pt: Record<string, any> = { year: yr };
+//     for (const k of imgCols) {
+//       const v = row[k];
+//       if (v != null) pt[PARAM_SHORT[k] ?? k] = +Number(v).toFixed(2);
+//     }
+//     return pt;
+//   });
+
+//   const active = imgCols.filter(k => data.filter(d => d[PARAM_SHORT[k] ?? k] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title="Parameter Scores — Trend by Ranking Year">
+//       <ResponsiveContainer width="100%" height={260}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis domain={[0, "auto"]} {...AX} />
+//           <Tooltip content={<Tip fmt={(v: number) => v?.toFixed(2)} />} />
+//           <Legend
+//             wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }}
+//             formatter={(val) => PARAM_FULL[val] ?? val}
+//           />
+//           {active.map((k, i) => (
+//             <Line key={k} type="monotone" dataKey={PARAM_SHORT[k] ?? k}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 2. INTAKE — one line per program over academic years
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function IntakeTrendChart({ metrics }: { metrics: RawMetric[] }) {
+//   const valid = metrics.filter(m => isRealYear(m.year) && !isBAD(m.value) && !isBAD(m.program));
+//   if (!valid.length) return null;
+
+//   const yearSet = new Set<string>();
+//   const map = new Map<string, Map<string, number>>(); // program → year → total
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const prog = m.program.trim();
+//     const val = toNum(m.value);
+//     if (!val || val <= 0) continue;
+//     yearSet.add(yr);
+//     if (!map.has(prog)) map.set(prog, new Map());
+//     map.get(prog)!.set(yr, (map.get(prog)!.get(yr) ?? 0) + val);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   const progs = Array.from(map.keys()).sort();
+//   if (years.length < 2 || !progs.length) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const p of progs) {
+//       const v = map.get(p)!.get(yr);
+//       if (v != null) pt[shorten(p, 20)] = v;
+//     }
+//     return pt;
+//   });
+
+//   const active = progs.filter(p => data.filter(d => d[shorten(p, 20)] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title="Sanctioned Intake — Trend by Academic Year">
+//       <ResponsiveContainer width="100%" height={240}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis {...AX} />
+//           <Tooltip content={<Tip />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {active.map((p, i) => (
+//             <Line key={p} type="monotone" dataKey={shorten(p, 20)}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 3. PLACEMENT — placed / salary / higher studies over graduation years
+// //    Salary on right Y-axis (₹ L), counts on left
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function PlacementTrendChart({ metrics, program }: { metrics: RawMetric[]; program: string }) {
+//   const gradRows = metrics.filter(m => m.year.toLowerCase().includes("graduation") && !isBAD(m.value));
+//   if (!gradRows.length) return null;
+
+//   const K_PLACED  = "Placed";
+//   const K_HIGHER  = "Higher Studies";
+//   const K_GRAD    = "Graduated";
+//   const K_SALARY  = "Median Salary (L)";
+
+//   const yearSet = new Set<string>();
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   for (const m of gradRows) {
+//     const yr = baseYear(m.year);
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     yearSet.add(yr);
+//     const ml = m.metric.toLowerCase();
+//     let key: string | null = null;
+//     if (ml.includes("students placed"))                                            key = K_PLACED;
+//     else if (ml.includes("higher stud") || ml.includes("selected for higher"))    key = K_HIGHER;
+//     else if (ml.includes("graduating in minimum"))                                 key = K_GRAD;
+//     else if (ml.includes("salary") || ml.includes("median"))                      key = K_SALARY;
+//     if (!key) continue;
+//     const mapped = key === K_SALARY ? +(val / 100_000).toFixed(2) : val;
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     mmap.get(key)!.set(yr, mapped);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const [k, ym] of mmap) { const v = ym.get(yr); if (v != null) pt[k] = v; }
+//     return pt;
+//   });
+
+//   const countKeys  = [K_PLACED, K_HIGHER, K_GRAD].filter(k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2);
+//   const hasSalary  = mmap.has(K_SALARY) && data.filter(d => d[K_SALARY] != null).length >= 2;
+//   if (!countKeys.length && !hasSalary) return null;
+
+//   const KC: Record<string, string> = { [K_PLACED]: PALETTE[0], [K_HIGHER]: PALETTE[1], [K_GRAD]: PALETTE[2], [K_SALARY]: PALETTE[3] };
+
+//   return (
+//     <ChartCard title={`Placement Trend — ${shorten(program, 42)}`}>
+//       <ResponsiveContainer width="100%" height={220}>
+//         <LineChart data={data} margin={{ top: 4, right: hasSalary ? 52 : 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis yAxisId="left" {...AX} />
+//           {hasSalary && (
+//             <YAxis yAxisId="right" orientation="right"
+//               tickFormatter={v => `₹${v}L`}
+//               axisLine={false} tickLine={false}
+//               tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_SALARY] }} />
+//           )}
+//           <Tooltip content={<Tip fmt={(v: number, name: string) => name === K_SALARY ? `₹${v}L` : v?.toLocaleString("en-IN")} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {countKeys.map(k => (
+//             <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+//               stroke={KC[k]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }} activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//           {hasSalary && (
+//             <Line yAxisId="right" type="monotone" dataKey={K_SALARY}
+//               stroke={KC[K_SALARY]} strokeWidth={1.8} strokeDasharray="5 3"
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[K_SALARY] }} activeDot={{ r: 5 }} connectNulls />
+//           )}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 4. FINANCIAL — one line per line item over academic years (₹ Cr)
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function FinancialTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+//   const valid = metrics.filter(m =>
+//     !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") &&
+//     !isBAD(m.program) && isRealYear(m.year)
+//   );
+//   if (!valid.length) return null;
+
+//   const yearSet = new Set<string>();
+//   const lineMap = new Map<string, Map<string, number>>();
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const prog = m.program.trim();
+//     const val = toNum(m.value);
+//     if (!val || val <= 0) continue;
+//     yearSet.add(yr);
+//     if (!lineMap.has(prog)) lineMap.set(prog, new Map());
+//     lineMap.get(prog)!.set(yr, +(val / 1e7).toFixed(2));
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   const lines = Array.from(lineMap.keys()).sort();
+//   if (years.length < 2 || !lines.length) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const l of lines) { const v = lineMap.get(l)!.get(yr); if (v != null) pt[shorten(l, 22)] = v; }
+//     return pt;
+//   });
+
+//   const active = lines.filter(l => data.filter(d => d[shorten(l, 22)] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title={`${title} — Trend by Year (₹ Crore)`}>
+//       <ResponsiveContainer width="100%" height={Math.min(280, 140 + active.length * 20)}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -4 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis tickFormatter={v => `₹${v}Cr`} {...AX} />
+//           <Tooltip content={<Tip fmt={(v: number) => `₹${v} Cr`} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {active.map((l, i) => (
+//             <Line key={l} type="monotone" dataKey={shorten(l, 22)}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 5. RESEARCH — projects / agencies / amount over academic years
+// //    Amount on right axis (₹ Cr), counts on left
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function ResearchTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+//   const valid = metrics.filter(m =>
+//     !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") && isRealYear(m.year)
+//   );
+//   if (!valid.length) return null;
+
+//   const K_PROJ  = "Projects / Programs";
+//   const K_AGENCY = "Funding Agencies";
+//   const K_AMT   = "Amount (Cr)";
+//   const K_PART  = "Participants";
+
+//   const yearSet = new Set<string>();
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     yearSet.add(yr);
+//     const ml = m.metric.toLowerCase();
+//     let key: string | null = null;
+//     if (ml.includes("no. of") && (ml.includes("project") || ml.includes("program")))   key = K_PROJ;
+//     else if (ml.includes("total no.") && ml.includes("project"))                        key = K_PROJ;
+//     else if (ml.includes("number of projects") || ml.includes("number of programs"))    key = K_PROJ;
+//     else if (ml.includes("funding agenc") || ml.includes("no. of agenc"))               key = K_AGENCY;
+//     else if (ml.includes("participants"))                                                key = K_PART;
+//     else if (ml.includes("amount") && !ml.includes("words"))                            key = K_AMT;
+//     if (!key) continue;
+//     const mapped = key === K_AMT ? +(val / 1e7).toFixed(2) : val;
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     mmap.get(key)!.set(yr, (mmap.get(key)!.get(yr) ?? 0) + mapped);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2 || !mmap.size) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const [k, ym] of mmap) { const v = ym.get(yr); if (v != null) pt[k] = v; }
+//     return pt;
+//   });
+
+//   const countKeys = [K_PROJ, K_AGENCY, K_PART].filter(k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2);
+//   const hasAmt    = mmap.has(K_AMT) && data.filter(d => d[K_AMT] != null).length >= 2;
+//   if (!countKeys.length && !hasAmt) return null;
+
+//   const KC: Record<string, string> = { [K_PROJ]: PALETTE[0], [K_AGENCY]: PALETTE[1], [K_PART]: PALETTE[2], [K_AMT]: PALETTE[3] };
+
+//   return (
+//     <ChartCard title={`${title} — Trend by Year`}>
+//       <ResponsiveContainer width="100%" height={220}>
+//         <LineChart data={data} margin={{ top: 4, right: hasAmt ? 56 : 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis yAxisId="left" {...AX} />
+//           {hasAmt && (
+//             <YAxis yAxisId="right" orientation="right"
+//               tickFormatter={v => `₹${v}Cr`} axisLine={false} tickLine={false}
+//               tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_AMT] }} />
+//           )}
+//           <Tooltip content={<Tip fmt={(v: number, name: string) => name === K_AMT ? `₹${v} Cr` : v?.toLocaleString("en-IN")} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {countKeys.map(k => (
+//             <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+//               stroke={KC[k]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }} activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//           {hasAmt && (
+//             <Line yAxisId="right" type="monotone" dataKey={K_AMT}
+//               stroke={KC[K_AMT]} strokeWidth={1.8} strokeDasharray="5 3"
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[K_AMT] }} activeDot={{ r: 5 }} connectNulls />
+//           )}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// "use client";
+// /**
+//  * NIRFCharts.tsx
+//  * ─────────────────────────────────────────────────────────────────────────────
+//  * Trend-line charts for every InstituteDetail tab.
+//  * Every chart is null-safe — renders nothing when data is insufficient.
+//  *
+//  * Exports:
+//  *   ScoresTrendChart      — one line per NIRF parameter (SS, FSR…) over ranking years
+//  *   IntakeTrendChart      — one line per program over academic years
+//  *   PlacementTrendChart   — placed / salary / higher studies per program over grad years
+//  *   FinancialTrendChart   — one line per expenditure line item over academic years (₹ Cr)
+//  *   ResearchTrendChart    — projects / agencies / amount per section over academic years
+//  */
+
+// import React from "react";
+// import {
+//   LineChart, Line,
+//   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+// } from "recharts";
+
+// // ── Theme ──────────────────────────────────────────────────────────────────────
+// const PALETTE = [
+//   "#c0392b", "#1a7a6e", "#7d4fa8", "#b5651d",
+//   "#2e6da4", "#5a8a3a", "#c0762b", "#2b6dc0",
+//   "#8a5a2e", "#3a8a5a", "#6d2eb5", "#b52e6d",
+// ];
+// const MONO    = "'IBM Plex Mono', monospace";
+// const BORDER  = "#e4e2dd";
+// const INK300  = "#a8a49c";
+// const CRIMSON = "#c0392b";
+
+// // ── Shared primitives ─────────────────────────────────────────────────────────
+// export function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+//   return (
+//     <div style={{
+//       background: "var(--white)", border: `1px solid ${BORDER}`,
+//       padding: "16px 20px 20px", marginBottom: 14,
+//       boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+//     }}>
+//       <p style={{
+//         fontFamily: MONO, fontSize: "0.6rem", textTransform: "uppercase",
+//         letterSpacing: "0.1em", color: CRIMSON,
+//         marginBottom: 14, paddingBottom: 6, borderBottom: `1px solid ${BORDER}`,
+//       }}>
+//         {title}
+//       </p>
+//       {children}
+//     </div>
+//   );
+// }
+
+// function Tip({ active, payload, label, fmt }: any) {
+//   if (!active || !payload?.length) return null;
+//   return (
+//     <div style={{ background: "#1a1916", border: "1px solid #3d3b36", fontFamily: MONO, fontSize: "0.68rem", color: "#f7f6f3" }}>
+//       <p style={{ padding: "6px 10px 4px", color: INK300, borderBottom: "1px solid #3d3b36", marginBottom: 4 }}>{label}</p>
+//       {payload.map((p: any, i: number) => (
+//         <p key={i} style={{ padding: "2px 10px", color: p.color }}>
+//           {p.name}: <strong>{fmt ? fmt(p.value, p.name) : p.value?.toLocaleString("en-IN")}</strong>
+//         </p>
+//       ))}
+//       <div style={{ height: 6 }} />
+//     </div>
+//   );
+// }
+
+// const AX = { axisLine: false, tickLine: false, tick: { fontFamily: MONO, fontSize: 10, fill: INK300 } };
+
+// // ── Helpers ───────────────────────────────────────────────────────────────────
+// const BAD_V = new Set(["", "nan", "<na>", "-", "n/a", "na", "null", "undefined", "none"]);
+// const isBAD = (v: any) => BAD_V.has(String(v ?? "").trim().toLowerCase());
+// const toNum = (v: any) => { const n = Number(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? null : n; };
+// function baseYear(y: string) { return y.trim().match(/^(\d{4}-\d{2})/)?.[1] ?? y.trim(); }
+// function isRealYear(y: any) { const s = String(y ?? "").trim(); return !isBAD(s) && /^\d{4}(-\d{2})?/.test(s); }
+// function sortYrs(years: string[]) {
+//   return [...years].sort((a, b) => { const ay = parseInt(a), by = parseInt(b); return isNaN(ay) || isNaN(by) ? a.localeCompare(b) : ay - by; });
+// }
+// const shorten = (s: string, n = 22) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+// export interface RawMetric { metric: string; year: string; value: string; ranking_year: number; program: string; }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 1. SCORES — one line per NIRF parameter over ranking years
+// // ─────────────────────────────────────────────────────────────────────────────
+// const PARAM_SHORT: Record<string, string> = {
+//   img_ss_score: "SS", img_fsr_score: "FSR", img_fqe_score: "FQE", img_fru_score: "FRU",
+//   img_oe_mir_score: "OE/MIR", img_pu_score: "PU", img_qp_score: "QP", img_ipr_score: "IPR",
+//   img_fppp_score: "FPPP", img_gue_score: "GUE", img_gphd_score: "GPHD", img_rd_score: "RD",
+//   img_wd_score: "WD", img_escs_score: "ESCS", img_pcs_score: "PCS", img_pr_score: "PR",
+// };
+// const PARAM_FULL: Record<string, string> = {
+//   SS: "Student Strength", FSR: "Faculty–Student Ratio", FQE: "Faculty Qualification",
+//   FRU: "Faculty Research", "OE/MIR": "Outreach & Inclusivity", PU: "Perception",
+//   QP: "Quality Publication", IPR: "IPR & Patents", FPPP: "Footprint of Projects",
+//   GUE: "Graduate Performance", GPHD: "PhD Graduates", RD: "R&D", WD: "Wider Impact",
+//   ESCS: "Economic & Social", PCS: "Peer Perception", PR: "Perception",
+// };
+
+// export function ScoresTrendChart({
+//   scoresByYear,
+//   imgCols,
+// }: {
+//   scoresByYear: Record<number, Record<string, unknown>>;
+//   imgCols: string[];
+// }) {
+//   const years = Object.keys(scoresByYear).map(Number).sort((a, b) => a - b);
+//   if (years.length < 2 || !imgCols.length) return null;
+
+//   const data = years.map(yr => {
+//     const row = scoresByYear[yr] as Record<string, unknown>;
+//     const pt: Record<string, any> = { year: yr };
+//     for (const k of imgCols) {
+//       const v = row[k];
+//       if (v != null) pt[PARAM_SHORT[k] ?? k] = +Number(v).toFixed(2);
+//     }
+//     return pt;
+//   });
+
+//   const active = imgCols.filter(k => data.filter(d => d[PARAM_SHORT[k] ?? k] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title="Parameter Scores — Trend by Ranking Year">
+//       <ResponsiveContainer width="100%" height={260}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis domain={[0, "auto"]} {...AX} />
+//           <Tooltip content={<Tip fmt={(v: number) => v?.toFixed(2)} />} />
+//           <Legend
+//             wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }}
+//             formatter={(val) => PARAM_FULL[val] ?? val}
+//           />
+//           {active.map((k, i) => (
+//             <Line key={k} type="monotone" dataKey={PARAM_SHORT[k] ?? k}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 2. INTAKE — one line per program over academic years
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function IntakeTrendChart({ metrics }: { metrics: RawMetric[] }) {
+//   const valid = metrics.filter(m => isRealYear(m.year) && !isBAD(m.value) && !isBAD(m.program));
+//   if (!valid.length) return null;
+
+//   const yearSet = new Set<string>();
+//   const map = new Map<string, Map<string, number>>(); // program → year → total
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const prog = m.program.trim();
+//     const val = toNum(m.value);
+//     if (!val || val <= 0) continue;
+//     yearSet.add(yr);
+//     if (!map.has(prog)) map.set(prog, new Map());
+//     map.get(prog)!.set(yr, (map.get(prog)!.get(yr) ?? 0) + val);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   const progs = Array.from(map.keys()).sort();
+//   if (years.length < 2 || !progs.length) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const p of progs) {
+//       const v = map.get(p)!.get(yr);
+//       if (v != null) pt[shorten(p, 20)] = v;
+//     }
+//     return pt;
+//   });
+
+//   const active = progs.filter(p => data.filter(d => d[shorten(p, 20)] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title="Sanctioned Intake — Trend by Academic Year">
+//       <ResponsiveContainer width="100%" height={240}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis {...AX} />
+//           <Tooltip content={<Tip />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {active.map((p, i) => (
+//             <Line key={p} type="monotone" dataKey={shorten(p, 20)}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 3. PLACEMENT — full trend covering all year types:
+// //    • Graduation Year  → Placed, Graduated, Higher Studies, Median Salary
+// //    • Intake Year      → Intake (sanctioned), Admitted
+// //    • Lateral Entry    → Lateral Entry admissions
+// //
+// //    X-axis = base academic year (e.g. "2019-20")
+// //    Salary on right Y-axis (₹ L), all counts on left
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function PlacementTrendChart({ metrics, program }: { metrics: RawMetric[]; program: string }) {
+//   // Keys — graduation year series
+//   const K_PLACED  = "Placed";
+//   const K_HIGHER  = "Higher Studies";
+//   const K_GRAD    = "Graduated";
+//   const K_SALARY  = "Median Salary (L)";
+//   // Keys — intake year series
+//   const K_INTAKE   = "Intake (Sanctioned)";
+//   const K_ADMITTED = "Admitted";
+//   const K_LATERAL  = "Lateral Entry";
+
+//   const yearSet = new Set<string>();
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   const addVal = (key: string, yr: string, val: number) => {
+//     yearSet.add(yr);
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     // keep max when same yr appears multiple times (avoids summing duplicates)
+//     const prev = mmap.get(key)!.get(yr) ?? 0;
+//     mmap.get(key)!.set(yr, Math.max(prev, val));
+//   };
+
+//   for (const m of metrics) {
+//     if (isBAD(m.value) || isBAD(m.year)) continue;
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     const yr  = baseYear(m.year);
+//     if (!yr) continue;
+//     const ml  = m.year.toLowerCase();
+//     const met = m.metric.toLowerCase();
+
+//     if (ml.includes("graduation")) {
+//       // Graduation Year rows
+//       if (met.includes("students placed"))                                  addVal(K_PLACED,  yr, val);
+//       else if (met.includes("higher stud") || met.includes("selected for higher")) addVal(K_HIGHER, yr, val);
+//       else if (met.includes("graduating in minimum"))                       addVal(K_GRAD,    yr, val);
+//       else if (met.includes("salary") || met.includes("median"))           addVal(K_SALARY,  yr, +(val / 100_000).toFixed(2));
+//     } else if (ml.includes("intake year")) {
+//       // Intake Year rows
+//       if (met.includes("intake in the year") || met.includes("sanctioned intake")) addVal(K_INTAKE,   yr, val);
+//       else if (met.includes("admitted in the year"))                               addVal(K_ADMITTED, yr, val);
+//     } else if (ml.includes("lateral entry")) {
+//       // Lateral Entry rows
+//       if (met.includes("lateral entry") || met.includes("admitted through lateral")) addVal(K_LATERAL, yr, val);
+//     }
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const [k, ym] of mmap) {
+//       const v = ym.get(yr);
+//       if (v != null) pt[k] = v;
+//     }
+//     return pt;
+//   });
+
+//   // Series that have at least 2 data points
+//   const COUNT_ORDER = [K_PLACED, K_GRAD, K_HIGHER, K_INTAKE, K_ADMITTED, K_LATERAL];
+//   const countKeys   = COUNT_ORDER.filter(
+//     k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2,
+//   );
+//   const hasSalary   = mmap.has(K_SALARY) && data.filter(d => d[K_SALARY] != null).length >= 2;
+//   if (!countKeys.length && !hasSalary) return null;
+
+//   // Colour map — fixed colours per key so legend is stable
+//   const KC: Record<string, string> = {
+//     [K_PLACED]:   PALETTE[0],  // crimson
+//     [K_GRAD]:     PALETTE[2],  // purple
+//     [K_HIGHER]:   PALETTE[1],  // teal
+//     [K_SALARY]:   PALETTE[3],  // amber  (dashed, right axis)
+//     [K_INTAKE]:   PALETTE[4],  // blue
+//     [K_ADMITTED]: PALETTE[5],  // green
+//     [K_LATERAL]:  PALETTE[6],  // orange
+//   };
+
+//   const fmtTip = (v: number, name: string) =>
+//     name === K_SALARY ? `₹${v}L` : v?.toLocaleString("en-IN");
+
+//   return (
+//     <ChartCard title={`Placement Trend — ${shorten(program, 42)}`}>
+//       <ResponsiveContainer width="100%" height={260}>
+//         <LineChart data={data} margin={{ top: 4, right: hasSalary ? 56 : 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis yAxisId="left" {...AX} />
+//           {hasSalary && (
+//             <YAxis
+//               yAxisId="right"
+//               orientation="right"
+//               tickFormatter={v => `₹${v}L`}
+//               axisLine={false}
+//               tickLine={false}
+//               tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_SALARY] }}
+//             />
+//           )}
+//           <Tooltip content={<Tip fmt={fmtTip} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+
+//           {/* Count series on left axis */}
+//           {countKeys.map(k => (
+//             <Line
+//               key={k}
+//               yAxisId="left"
+//               type="monotone"
+//               dataKey={k}
+//               stroke={KC[k]}
+//               strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }}
+//               activeDot={{ r: 5 }}
+//               connectNulls
+//             />
+//           ))}
+
+//           {/* Salary dashed on right axis */}
+//           {hasSalary && (
+//             <Line
+//               yAxisId="right"
+//               type="monotone"
+//               dataKey={K_SALARY}
+//               stroke={KC[K_SALARY]}
+//               strokeWidth={1.8}
+//               strokeDasharray="5 3"
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[K_SALARY] }}
+//               activeDot={{ r: 5 }}
+//               connectNulls
+//             />
+//           )}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 4. FINANCIAL — one line per line item over academic years (₹ Cr)
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function FinancialTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+//   const valid = metrics.filter(m =>
+//     !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") &&
+//     !isBAD(m.program) && isRealYear(m.year)
+//   );
+//   if (!valid.length) return null;
+
+//   const yearSet = new Set<string>();
+//   const lineMap = new Map<string, Map<string, number>>();
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const prog = m.program.trim();
+//     const val = toNum(m.value);
+//     if (!val || val <= 0) continue;
+//     yearSet.add(yr);
+//     if (!lineMap.has(prog)) lineMap.set(prog, new Map());
+//     lineMap.get(prog)!.set(yr, +(val / 1e7).toFixed(2));
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   const lines = Array.from(lineMap.keys()).sort();
+//   if (years.length < 2 || !lines.length) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const l of lines) { const v = lineMap.get(l)!.get(yr); if (v != null) pt[shorten(l, 22)] = v; }
+//     return pt;
+//   });
+
+//   const active = lines.filter(l => data.filter(d => d[shorten(l, 22)] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title={`${title} — Trend by Year (₹ Crore)`}>
+//       <ResponsiveContainer width="100%" height={Math.min(280, 140 + active.length * 20)}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -4 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis tickFormatter={v => `₹${v}Cr`} {...AX} />
+//           <Tooltip content={<Tip fmt={(v: number) => `₹${v} Cr`} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {active.map((l, i) => (
+//             <Line key={l} type="monotone" dataKey={shorten(l, 22)}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 5. RESEARCH — projects / agencies / amount over academic years
+// //    Amount on right axis (₹ Cr), counts on left
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function ResearchTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+//   const valid = metrics.filter(m =>
+//     !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") && isRealYear(m.year)
+//   );
+//   if (!valid.length) return null;
+
+//   const K_PROJ  = "Projects / Programs";
+//   const K_AGENCY = "Funding Agencies";
+//   const K_AMT   = "Amount (Cr)";
+//   const K_PART  = "Participants";
+
+//   const yearSet = new Set<string>();
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     yearSet.add(yr);
+//     const ml = m.metric.toLowerCase();
+//     let key: string | null = null;
+//     if (ml.includes("no. of") && (ml.includes("project") || ml.includes("program")))   key = K_PROJ;
+//     else if (ml.includes("total no.") && ml.includes("project"))                        key = K_PROJ;
+//     else if (ml.includes("number of projects") || ml.includes("number of programs"))    key = K_PROJ;
+//     else if (ml.includes("funding agenc") || ml.includes("no. of agenc"))               key = K_AGENCY;
+//     else if (ml.includes("participants"))                                                key = K_PART;
+//     else if (ml.includes("amount") && !ml.includes("words"))                            key = K_AMT;
+//     if (!key) continue;
+//     const mapped = key === K_AMT ? +(val / 1e7).toFixed(2) : val;
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     mmap.get(key)!.set(yr, (mmap.get(key)!.get(yr) ?? 0) + mapped);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2 || !mmap.size) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const [k, ym] of mmap) { const v = ym.get(yr); if (v != null) pt[k] = v; }
+//     return pt;
+//   });
+
+//   const countKeys = [K_PROJ, K_AGENCY, K_PART].filter(k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2);
+//   const hasAmt    = mmap.has(K_AMT) && data.filter(d => d[K_AMT] != null).length >= 2;
+//   if (!countKeys.length && !hasAmt) return null;
+
+//   const KC: Record<string, string> = { [K_PROJ]: PALETTE[0], [K_AGENCY]: PALETTE[1], [K_PART]: PALETTE[2], [K_AMT]: PALETTE[3] };
+
+//   return (
+//     <ChartCard title={`${title} — Trend by Year`}>
+//       <ResponsiveContainer width="100%" height={220}>
+//         <LineChart data={data} margin={{ top: 4, right: hasAmt ? 56 : 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis yAxisId="left" {...AX} />
+//           {hasAmt && (
+//             <YAxis yAxisId="right" orientation="right"
+//               tickFormatter={v => `₹${v}Cr`} axisLine={false} tickLine={false}
+//               tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_AMT] }} />
+//           )}
+//           <Tooltip content={<Tip fmt={(v: number, name: string) => name === K_AMT ? `₹${v} Cr` : v?.toLocaleString("en-IN")} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {countKeys.map(k => (
+//             <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+//               stroke={KC[k]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }} activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//           {hasAmt && (
+//             <Line yAxisId="right" type="monotone" dataKey={K_AMT}
+//               stroke={KC[K_AMT]} strokeWidth={1.8} strokeDasharray="5 3"
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[K_AMT] }} activeDot={{ r: 5 }} connectNulls />
+//           )}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// "use client";
+// /**
+//  * NIRFCharts.tsx
+//  * ─────────────────────────────────────────────────────────────────────────────
+//  * Trend-line charts for every InstituteDetail tab.
+//  * Every chart is null-safe — renders nothing when data is insufficient.
+//  *
+//  * Exports:
+//  *   ScoresTrendChart      — one line per NIRF parameter (SS, FSR…) over ranking years
+//  *   IntakeTrendChart      — one line per program over academic years
+//  *   PlacementTrendChart   — placed / salary / higher studies per program over grad years
+//  *   FinancialTrendChart   — one line per expenditure line item over academic years (₹ Cr)
+//  *   ResearchTrendChart    — projects / agencies / amount per section over academic years
+//  */
+
+// import React, { useState } from "react";
+// import {
+//   LineChart, Line,
+//   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+// } from "recharts";
+
+// // ── Theme ──────────────────────────────────────────────────────────────────────
+// const PALETTE = [
+//   "#c0392b", "#1a7a6e", "#7d4fa8", "#b5651d",
+//   "#2e6da4", "#5a8a3a", "#c0762b", "#2b6dc0",
+//   "#8a5a2e", "#3a8a5a", "#6d2eb5", "#b52e6d",
+// ];
+// const MONO    = "'IBM Plex Mono', monospace";
+// const BORDER  = "#e4e2dd";
+// const INK300  = "#a8a49c";
+// const CRIMSON = "#c0392b";
+
+// // ── Shared primitives ─────────────────────────────────────────────────────────
+// export function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+//   return (
+//     <div style={{
+//       background: "var(--white)", border: `1px solid ${BORDER}`,
+//       padding: "16px 20px 20px", marginBottom: 14,
+//       boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+//     }}>
+//       <p style={{
+//         fontFamily: MONO, fontSize: "0.6rem", textTransform: "uppercase",
+//         letterSpacing: "0.1em", color: CRIMSON,
+//         marginBottom: 14, paddingBottom: 6, borderBottom: `1px solid ${BORDER}`,
+//       }}>
+//         {title}
+//       </p>
+//       {children}
+//     </div>
+//   );
+// }
+
+// // ── Program Selector ──────────────────────────────────────────────────────────
+// // Pill-style buttons that sit beside the chart title.
+// // "All" is always the first option.
+
+// const ALL_PROG = "All Programs";
+
+// export function ProgramSelector({
+//   programs,
+//   selected,
+//   onChange,
+// }: {
+//   programs: string[];
+//   selected: string;
+//   onChange: (p: string) => void;
+// }) {
+//   if (programs.length <= 1) return null;
+//   const opts = [ALL_PROG, ...programs];
+//   return (
+//     <div style={{
+//       display: "flex",
+//       flexWrap: "wrap",
+//       gap: 6,
+//       marginBottom: 14,
+//       paddingBottom: 12,
+//       borderBottom: `1px solid ${BORDER}`,
+//     }}>
+//       <span style={{
+//         fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
+//         letterSpacing: "0.08em", color: INK300,
+//         alignSelf: "center", marginRight: 4, flexShrink: 0,
+//       }}>
+//         Program
+//       </span>
+//       {opts.map(p => {
+//         const active = p === selected;
+//         return (
+//           <button
+//             key={p}
+//             onClick={() => onChange(p)}
+//             style={{
+//               fontFamily: MONO,
+//               fontSize: "0.65rem",
+//               padding: "3px 10px",
+//               border: `1px solid ${active ? CRIMSON : BORDER}`,
+//               background: active ? CRIMSON : "var(--white)",
+//               color: active ? "#fff" : INK300,
+//               cursor: "pointer",
+//               borderRadius: 2,
+//               transition: "all 0.12s",
+//               whiteSpace: "nowrap",
+//             }}
+//           >
+//             {p === ALL_PROG ? "All" : p}
+//           </button>
+//         );
+//       })}
+//     </div>
+//   );
+// }
+
+// function Tip({ active, payload, label, fmt }: any) {
+//   if (!active || !payload?.length) return null;
+//   return (
+//     <div style={{ background: "#1a1916", border: "1px solid #3d3b36", fontFamily: MONO, fontSize: "0.68rem", color: "#f7f6f3" }}>
+//       <p style={{ padding: "6px 10px 4px", color: INK300, borderBottom: "1px solid #3d3b36", marginBottom: 4 }}>{label}</p>
+//       {payload.map((p: any, i: number) => (
+//         <p key={i} style={{ padding: "2px 10px", color: p.color }}>
+//           {p.name}: <strong>{fmt ? fmt(p.value, p.name) : p.value?.toLocaleString("en-IN")}</strong>
+//         </p>
+//       ))}
+//       <div style={{ height: 6 }} />
+//     </div>
+//   );
+// }
+
+// const AX = { axisLine: false, tickLine: false, tick: { fontFamily: MONO, fontSize: 10, fill: INK300 } };
+
+// // ── Helpers ───────────────────────────────────────────────────────────────────
+// const BAD_V = new Set(["", "nan", "<na>", "-", "n/a", "na", "null", "undefined", "none"]);
+// const isBAD = (v: any) => BAD_V.has(String(v ?? "").trim().toLowerCase());
+// const toNum = (v: any) => { const n = Number(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? null : n; };
+// function baseYear(y: string) { return y.trim().match(/^(\d{4}-\d{2})/)?.[1] ?? y.trim(); }
+// function isRealYear(y: any) { const s = String(y ?? "").trim(); return !isBAD(s) && /^\d{4}(-\d{2})?/.test(s); }
+// function sortYrs(years: string[]) {
+//   return [...years].sort((a, b) => { const ay = parseInt(a), by = parseInt(b); return isNaN(ay) || isNaN(by) ? a.localeCompare(b) : ay - by; });
+// }
+// const shorten = (s: string, n = 22) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+// export interface RawMetric { metric: string; year: string; value: string; ranking_year: number; program: string; }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 1. SCORES — one line per NIRF parameter over ranking years
+// // ─────────────────────────────────────────────────────────────────────────────
+// const PARAM_SHORT: Record<string, string> = {
+//   img_ss_score: "SS", img_fsr_score: "FSR", img_fqe_score: "FQE", img_fru_score: "FRU",
+//   img_oe_mir_score: "OE/MIR", img_pu_score: "PU", img_qp_score: "QP", img_ipr_score: "IPR",
+//   img_fppp_score: "FPPP", img_gue_score: "GUE", img_gphd_score: "GPHD", img_rd_score: "RD",
+//   img_wd_score: "WD", img_escs_score: "ESCS", img_pcs_score: "PCS", img_pr_score: "PR",
+// };
+// const PARAM_FULL: Record<string, string> = {
+//   SS: "Student Strength", FSR: "Faculty–Student Ratio", FQE: "Faculty Qualification",
+//   FRU: "Faculty Research", "OE/MIR": "Outreach & Inclusivity", PU: "Perception",
+//   QP: "Quality Publication", IPR: "IPR & Patents", FPPP: "Footprint of Projects",
+//   GUE: "Graduate Performance", GPHD: "PhD Graduates", RD: "R&D", WD: "Wider Impact",
+//   ESCS: "Economic & Social", PCS: "Peer Perception", PR: "Perception",
+// };
+
+// export function ScoresTrendChart({
+//   scoresByYear,
+//   imgCols,
+// }: {
+//   scoresByYear: Record<number, Record<string, unknown>>;
+//   imgCols: string[];
+// }) {
+//   const years = Object.keys(scoresByYear).map(Number).sort((a, b) => a - b);
+//   if (years.length < 2 || !imgCols.length) return null;
+
+//   const data = years.map(yr => {
+//     const row = scoresByYear[yr] as Record<string, unknown>;
+//     const pt: Record<string, any> = { year: yr };
+//     for (const k of imgCols) {
+//       const v = row[k];
+//       if (v != null) pt[PARAM_SHORT[k] ?? k] = +Number(v).toFixed(2);
+//     }
+//     return pt;
+//   });
+
+//   const active = imgCols.filter(k => data.filter(d => d[PARAM_SHORT[k] ?? k] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title="Parameter Scores — Trend by Ranking Year">
+//       <ResponsiveContainer width="100%" height={260}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis domain={[0, "auto"]} {...AX} />
+//           <Tooltip content={<Tip fmt={(v: number) => v?.toFixed(2)} />} />
+//           <Legend
+//             wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }}
+//             formatter={(val) => PARAM_FULL[val] ?? val}
+//           />
+//           {active.map((k, i) => (
+//             <Line key={k} type="monotone" dataKey={PARAM_SHORT[k] ?? k}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 2. INTAKE — one line per program over academic years + program selector
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function IntakeTrendChart({ metrics }: { metrics: RawMetric[] }) {
+//   const valid = metrics.filter(m => isRealYear(m.year) && !isBAD(m.value) && !isBAD(m.program));
+//   if (!valid.length) return null;
+
+//   const yearSet = new Set<string>();
+//   const map = new Map<string, Map<string, number>>(); // program → year → total
+
+//   for (const m of valid) {
+//     const yr   = baseYear(m.year);
+//     const prog = m.program.trim();
+//     const val  = toNum(m.value);
+//     if (!val || val <= 0) continue;
+//     yearSet.add(yr);
+//     if (!map.has(prog)) map.set(prog, new Map());
+//     map.get(prog)!.set(yr, (map.get(prog)!.get(yr) ?? 0) + val);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   const progs = Array.from(map.keys()).sort();
+//   if (years.length < 2 || !progs.length) return null;
+
+//   // Colour index stable per prog (not per filtered subset)
+//   const progColor = Object.fromEntries(progs.map((p, i) => [p, PALETTE[i % PALETTE.length]]));
+
+//   // eslint-disable-next-line react-hooks/rules-of-hooks
+//   const [selectedProg, setSelectedProg] = useState(ALL_PROG);
+
+//   // Which programs are visible
+//   const visibleProgs = selectedProg === ALL_PROG
+//     ? progs.filter(p => {
+//         const data = years.map(yr => map.get(p)!.get(yr) ?? null);
+//         return data.filter(v => v != null).length >= 2;
+//       })
+//     : progs.filter(p => p === selectedProg);
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const p of visibleProgs) {
+//       const v = map.get(p)!.get(yr);
+//       if (v != null) pt[shorten(p, 20)] = v;
+//     }
+//     return pt;
+//   });
+
+//   return (
+//     <ChartCard title="Sanctioned Intake — Trend by Academic Year">
+//       <ProgramSelector
+//         programs={progs}
+//         selected={selectedProg}
+//         onChange={setSelectedProg}
+//       />
+//       <ResponsiveContainer width="100%" height={240}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis {...AX} />
+//           <Tooltip content={<Tip />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {visibleProgs.map(p => (
+//             <Line
+//               key={p}
+//               type="monotone"
+//               dataKey={shorten(p, 20)}
+//               stroke={progColor[p]}
+//               strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: progColor[p] }}
+//               activeDot={{ r: 5 }}
+//               connectNulls
+//             />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 3. PLACEMENT — full trend covering all year types:
+// //    • Graduation Year  → Placed, Graduated, Higher Studies, Median Salary
+// //    • Intake Year      → Intake (sanctioned), Admitted
+// //    • Lateral Entry    → Lateral Entry admissions
+// //
+// //    X-axis = base academic year (e.g. "2019-20")
+// //    Salary on right Y-axis (₹ L), all counts on left
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function PlacementTrendChart({ metrics, program }: { metrics: RawMetric[]; program: string }) {
+//   // Keys — graduation year series
+//   const K_PLACED   = "Placed";
+//   const K_HIGHER   = "Higher Studies";
+//   const K_GRAD     = "Graduated";
+//   const K_SALARY   = "Median Salary (L)";
+//   // Keys — intake year series
+//   const K_INTAKE   = "Intake (Sanctioned)";
+//   const K_ADMITTED = "Admitted";
+//   const K_LATERAL  = "Lateral Entry";
+
+//   const yearSet = new Set<string>();
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   const addVal = (key: string, yr: string, val: number) => {
+//     yearSet.add(yr);
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     const prev = mmap.get(key)!.get(yr) ?? 0;
+//     mmap.get(key)!.set(yr, Math.max(prev, val));
+//   };
+
+//   for (const m of metrics) {
+//     if (isBAD(m.value) || isBAD(m.year)) continue;
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     const yr  = baseYear(m.year);
+//     if (!yr) continue;
+//     const ml  = m.year.toLowerCase();
+//     const met = m.metric.toLowerCase();
+
+//     if (ml.includes("graduation")) {
+//       if (met.includes("students placed"))                                         addVal(K_PLACED,   yr, val);
+//       else if (met.includes("higher stud") || met.includes("selected for higher")) addVal(K_HIGHER,   yr, val);
+//       else if (met.includes("graduating in minimum"))                              addVal(K_GRAD,     yr, val);
+//       else if (met.includes("salary") || met.includes("median"))                  addVal(K_SALARY,   yr, +(val / 100_000).toFixed(2));
+//     } else if (ml.includes("intake year")) {
+//       if (met.includes("intake in the year") || met.includes("sanctioned intake")) addVal(K_INTAKE,   yr, val);
+//       else if (met.includes("admitted in the year"))                               addVal(K_ADMITTED, yr, val);
+//     } else if (ml.includes("lateral entry")) {
+//       if (met.includes("lateral entry") || met.includes("admitted through lateral")) addVal(K_LATERAL, yr, val);
+//     }
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2) return null;
+
+//   // Determine which metric groups actually have data
+//   const gradKeys   = [K_PLACED, K_GRAD, K_HIGHER].filter(k => mmap.has(k));
+//   const intakeKeys = [K_INTAKE, K_ADMITTED, K_LATERAL].filter(k => mmap.has(k));
+//   const hasSalary  = mmap.has(K_SALARY);
+
+//   // Build available group tabs
+//   const GROUPS: string[] = [];
+//   if (gradKeys.length)   GROUPS.push("Graduation");
+//   if (intakeKeys.length) GROUPS.push("Intake");
+//   if (GROUPS.length > 1) GROUPS.unshift("All");
+
+//   // eslint-disable-next-line react-hooks/rules-of-hooks
+//   const [group, setGroup] = useState(GROUPS[0] ?? "All");
+
+//   const activeGroup = GROUPS.includes(group) ? group : GROUPS[0];
+
+//   // Which count keys are visible in this group
+//   const visibleCountKeys = (() => {
+//     const allCount = [...gradKeys, ...intakeKeys];
+//     if (activeGroup === "All")       return allCount;
+//     if (activeGroup === "Graduation") return gradKeys;
+//     if (activeGroup === "Intake")     return intakeKeys;
+//     return allCount;
+//   })().filter(k => {
+//     const d = years.map(yr => mmap.get(k)!.get(yr) ?? null);
+//     return d.filter(v => v != null).length >= 2;
+//   });
+
+//   const showSalary = hasSalary && (activeGroup === "All" || activeGroup === "Graduation");
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const k of visibleCountKeys) { const v = mmap.get(k)!.get(yr); if (v != null) pt[k] = v; }
+//     if (showSalary) { const v = mmap.get(K_SALARY)!.get(yr); if (v != null) pt[K_SALARY] = v; }
+//     return pt;
+//   });
+
+//   if (!visibleCountKeys.length && !showSalary) return null;
+
+//   const KC: Record<string, string> = {
+//     [K_PLACED]:   PALETTE[0],
+//     [K_GRAD]:     PALETTE[2],
+//     [K_HIGHER]:   PALETTE[1],
+//     [K_SALARY]:   PALETTE[3],
+//     [K_INTAKE]:   PALETTE[4],
+//     [K_ADMITTED]: PALETTE[5],
+//     [K_LATERAL]:  PALETTE[6],
+//   };
+
+//   const fmtTip = (v: number, name: string) =>
+//     name === K_SALARY ? `₹${v}L` : v?.toLocaleString("en-IN");
+
+//   return (
+//     <ChartCard title={`Placement Trend — ${shorten(program, 42)}`}>
+//       {/* Metric group selector */}
+//       {GROUPS.length > 1 && (
+//         <div style={{
+//           display: "flex", gap: 6, flexWrap: "wrap",
+//           marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${BORDER}`,
+//         }}>
+//           <span style={{
+//             fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
+//             letterSpacing: "0.08em", color: INK300, alignSelf: "center", marginRight: 4,
+//           }}>
+//             View
+//           </span>
+//           {GROUPS.map(g => {
+//             const active = g === activeGroup;
+//             return (
+//               <button key={g} onClick={() => setGroup(g)} style={{
+//                 fontFamily: MONO, fontSize: "0.65rem", padding: "3px 10px",
+//                 border: `1px solid ${active ? CRIMSON : BORDER}`,
+//                 background: active ? CRIMSON : "var(--white)",
+//                 color: active ? "#fff" : INK300,
+//                 cursor: "pointer", borderRadius: 2, transition: "all 0.12s",
+//               }}>
+//                 {g}
+//               </button>
+//             );
+//           })}
+//         </div>
+//       )}
+
+//       <ResponsiveContainer width="100%" height={260}>
+//         <LineChart data={data} margin={{ top: 4, right: showSalary ? 56 : 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis yAxisId="left" {...AX} />
+//           {showSalary && (
+//             <YAxis yAxisId="right" orientation="right"
+//               tickFormatter={v => `₹${v}L`} axisLine={false} tickLine={false}
+//               tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_SALARY] }} />
+//           )}
+//           <Tooltip content={<Tip fmt={fmtTip} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {visibleCountKeys.map(k => (
+//             <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+//               stroke={KC[k]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//           {showSalary && (
+//             <Line yAxisId="right" type="monotone" dataKey={K_SALARY}
+//               stroke={KC[K_SALARY]} strokeWidth={1.8} strokeDasharray="5 3"
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[K_SALARY] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           )}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 4. FINANCIAL — one line per line item over academic years (₹ Cr)
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function FinancialTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+//   const valid = metrics.filter(m =>
+//     !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") &&
+//     !isBAD(m.program) && isRealYear(m.year)
+//   );
+//   if (!valid.length) return null;
+
+//   const yearSet = new Set<string>();
+//   const lineMap = new Map<string, Map<string, number>>();
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const prog = m.program.trim();
+//     const val = toNum(m.value);
+//     if (!val || val <= 0) continue;
+//     yearSet.add(yr);
+//     if (!lineMap.has(prog)) lineMap.set(prog, new Map());
+//     lineMap.get(prog)!.set(yr, +(val / 1e7).toFixed(2));
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   const lines = Array.from(lineMap.keys()).sort();
+//   if (years.length < 2 || !lines.length) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const l of lines) { const v = lineMap.get(l)!.get(yr); if (v != null) pt[shorten(l, 22)] = v; }
+//     return pt;
+//   });
+
+//   const active = lines.filter(l => data.filter(d => d[shorten(l, 22)] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title={`${title} — Trend by Year (₹ Crore)`}>
+//       <ResponsiveContainer width="100%" height={Math.min(280, 140 + active.length * 20)}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -4 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis tickFormatter={v => `₹${v}Cr`} {...AX} />
+//           <Tooltip content={<Tip fmt={(v: number) => `₹${v} Cr`} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {active.map((l, i) => (
+//             <Line key={l} type="monotone" dataKey={shorten(l, 22)}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 5. RESEARCH — projects / agencies / amount over academic years
+// //    Amount on right axis (₹ Cr), counts on left
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function ResearchTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+//   const valid = metrics.filter(m =>
+//     !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") && isRealYear(m.year)
+//   );
+//   if (!valid.length) return null;
+
+//   const K_PROJ  = "Projects / Programs";
+//   const K_AGENCY = "Funding Agencies";
+//   const K_AMT   = "Amount (Cr)";
+//   const K_PART  = "Participants";
+
+//   const yearSet = new Set<string>();
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     yearSet.add(yr);
+//     const ml = m.metric.toLowerCase();
+//     let key: string | null = null;
+//     if (ml.includes("no. of") && (ml.includes("project") || ml.includes("program")))   key = K_PROJ;
+//     else if (ml.includes("total no.") && ml.includes("project"))                        key = K_PROJ;
+//     else if (ml.includes("number of projects") || ml.includes("number of programs"))    key = K_PROJ;
+//     else if (ml.includes("funding agenc") || ml.includes("no. of agenc"))               key = K_AGENCY;
+//     else if (ml.includes("participants"))                                                key = K_PART;
+//     else if (ml.includes("amount") && !ml.includes("words"))                            key = K_AMT;
+//     if (!key) continue;
+//     const mapped = key === K_AMT ? +(val / 1e7).toFixed(2) : val;
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     mmap.get(key)!.set(yr, (mmap.get(key)!.get(yr) ?? 0) + mapped);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2 || !mmap.size) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const [k, ym] of mmap) { const v = ym.get(yr); if (v != null) pt[k] = v; }
+//     return pt;
+//   });
+
+//   const countKeys = [K_PROJ, K_AGENCY, K_PART].filter(k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2);
+//   const hasAmt    = mmap.has(K_AMT) && data.filter(d => d[K_AMT] != null).length >= 2;
+//   if (!countKeys.length && !hasAmt) return null;
+
+//   const KC: Record<string, string> = { [K_PROJ]: PALETTE[0], [K_AGENCY]: PALETTE[1], [K_PART]: PALETTE[2], [K_AMT]: PALETTE[3] };
+
+//   return (
+//     <ChartCard title={`${title} — Trend by Year`}>
+//       <ResponsiveContainer width="100%" height={220}>
+//         <LineChart data={data} margin={{ top: 4, right: hasAmt ? 56 : 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis yAxisId="left" {...AX} />
+//           {hasAmt && (
+//             <YAxis yAxisId="right" orientation="right"
+//               tickFormatter={v => `₹${v}Cr`} axisLine={false} tickLine={false}
+//               tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_AMT] }} />
+//           )}
+//           <Tooltip content={<Tip fmt={(v: number, name: string) => name === K_AMT ? `₹${v} Cr` : v?.toLocaleString("en-IN")} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {countKeys.map(k => (
+//             <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+//               stroke={KC[k]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }} activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//           {hasAmt && (
+//             <Line yAxisId="right" type="monotone" dataKey={K_AMT}
+//               stroke={KC[K_AMT]} strokeWidth={1.8} strokeDasharray="5 3"
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[K_AMT] }} activeDot={{ r: 5 }} connectNulls />
+//           )}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 6. PhD — graduated (Full Time + Part Time) over academic years
+// //    Pulls from all ranking year submissions combined so the full
+// //    2019-20 → 2023-24 run is visible in one chart.
+// //
+// //    Data shape:
+// //      program = "No. of Ph.D students graduated..."
+// //      year    = "2021-22", "2022-23", ...
+// //      metric  = "Full Time Graduated" | "Part Time Graduated"
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function PhdTrendChart({ metrics }: { metrics: RawMetric[] }) {
+//   const K_FT = "Full Time Graduated";
+//   const K_PT = "Part Time Graduated";
+
+//   const yearSet = new Set<string>();
+//   // key → year → value  (keep max across duplicate ranking-year submissions)
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   const set = (key: string, yr: string, val: number) => {
+//     yearSet.add(yr);
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     const prev = mmap.get(key)!.get(yr) ?? 0;
+//     mmap.get(key)!.set(yr, Math.max(prev, val));
+//   };
+
+//   for (const m of metrics) {
+//     if (isBAD(m.value) || !isRealYear(m.year)) continue;
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     const yr  = baseYear(m.year);
+//     const met = m.metric.toLowerCase();
+//     if (met.includes("full time"))       set(K_FT, yr, val);
+//     else if (met.includes("part time"))  set(K_PT, yr, val);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const [k, ym] of mmap) {
+//       const v = ym.get(yr);
+//       if (v != null) pt[k] = v;
+//     }
+//     return pt;
+//   });
+
+//   const active = [K_FT, K_PT].filter(
+//     k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2,
+//   );
+//   if (!active.length) return null;
+
+//   const KC: Record<string, string> = {
+//     [K_FT]: PALETTE[2],  // purple
+//     [K_PT]: PALETTE[1],  // teal
+//   };
+
+//   return (
+//     <ChartCard title="PhD Graduated — Trend by Academic Year">
+//       <ResponsiveContainer width="100%" height={220}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis {...AX} />
+//           <Tooltip content={<Tip />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {active.map(k => (
+//             <Line
+//               key={k}
+//               type="monotone"
+//               dataKey={k}
+//               stroke={KC[k]}
+//               strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }}
+//               activeDot={{ r: 5 }}
+//               connectNulls
+//             />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 7. STUDENTS — all 12 metrics trend over ranking years
+// //
+// //    Students data has no academic year axis — snapshot per ranking year.
+// //    X-axis = ranking_year (2020 … 2025).
+// //    Values summed across all programs for institution-level totals.
+// //
+// //    Three charts:
+// //      A — Composition : Total Students, Male, Female
+// //      B — Diversity   : SC/ST/OBC, Within State, Outside State,
+// //                        Outside Country, Econ. Backward
+// //      C — Fee Status  : Reimbursed (Inst), Reimbursed (Govt),
+// //                        Reimbursed (Private), Not Receiving
+// // ─────────────────────────────────────────────────────────────────────────────
+
+// interface StudentRawMetric extends RawMetric { ranking_year: number; }
+
+// type StudentChart = "composition" | "diversity" | "fee";
+
+// const STUDENT_SERIES: Array<{ match: string[]; label: string; chart: StudentChart }> = [
+//   // Composition
+//   { match: ["total students"],                                             label: "Total Students",       chart: "composition" },
+//   { match: ["no. of male", "male students"],                              label: "Male",                 chart: "composition" },
+//   { match: ["no. of female", "female students"],                          label: "Female",               chart: "composition" },
+//   // Diversity
+//   { match: ["sc+st+obc", "socially challenged"],                          label: "SC/ST/OBC",            chart: "diversity"    },
+//   { match: ["within state"],                                              label: "Within State",         chart: "diversity"    },
+//   { match: ["outside state"],                                             label: "Outside State",        chart: "diversity"    },
+//   { match: ["outside country"],                                           label: "Outside Country",      chart: "diversity"    },
+//   { match: ["economically backward"],                                     label: "Econ. Backward",       chart: "diversity"    },
+//   // Fee reimbursement — order matters: most specific first
+//   { match: ["institution funds", "from institution"],                     label: "Reimb. (Institution)", chart: "fee"          },
+//   { match: ["private bod", "from private"],                               label: "Reimb. (Private)",     chart: "fee"          },
+//   { match: ["state and central", "central government", "from the state"], label: "Reimb. (Govt)",        chart: "fee"          },
+//   { match: ["not receiving full tuition", "not receiving"],               label: "Not Reimbursed",       chart: "fee"          },
+// ];
+
+// function matchStudentSeries(metric: string): { label: string; chart: StudentChart } | null {
+//   const ml = metric.toLowerCase();
+//   for (const s of STUDENT_SERIES) {
+//     if (s.match.some(kw => ml.includes(kw))) return { label: s.label, chart: s.chart };
+//   }
+//   return null;
+// }
+
+// const STUDENT_COLORS: Record<string, string> = {
+//   // Composition
+//   "Total Students":       PALETTE[4],   // blue
+//   "Male":                 PALETTE[0],   // crimson
+//   "Female":               PALETTE[1],   // teal
+//   // Diversity
+//   "SC/ST/OBC":            PALETTE[2],   // purple
+//   "Within State":         PALETTE[4],   // blue
+//   "Outside State":        PALETTE[3],   // amber
+//   "Outside Country":      PALETTE[5],   // green
+//   "Econ. Backward":       PALETTE[6],   // orange
+//   // Fee
+//   "Reimb. (Institution)": PALETTE[1],   // teal
+//   "Reimb. (Private)":     PALETTE[5],   // green
+//   "Reimb. (Govt)":        PALETTE[2],   // purple
+//   "Not Reimbursed":       PALETTE[0],   // crimson
+// };
+
+// function renderLineChart(
+//   data: Record<string, any>[],
+//   series: string[],
+//   title: string,
+//   height = 240,
+// ) {
+//   return (
+//     <ChartCard title={title}>
+//       <ResponsiveContainer width="100%" height={height}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis {...AX} />
+//           <Tooltip content={<Tip />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {series.map(k => (
+//             <Line
+//               key={k}
+//               type="monotone"
+//               dataKey={k}
+//               stroke={STUDENT_COLORS[k] ?? PALETTE[0]}
+//               strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: STUDENT_COLORS[k] ?? PALETTE[0] }}
+//               activeDot={{ r: 5 }}
+//               connectNulls
+//             />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// export function StudentsTrendChart({ metrics }: { metrics: StudentRawMetric[] }) {
+//   // Collect all distinct programs from the data
+//   const progSet = new Set<string>();
+//   for (const m of metrics) {
+//     if (!isBAD(m.program) && m.program.trim() !== "-") progSet.add(m.program.trim());
+//   }
+//   const progs = Array.from(progSet).sort();
+
+//   // eslint-disable-next-line react-hooks/rules-of-hooks
+//   const [selectedProg, setSelectedProg] = useState(ALL_PROG);
+
+//   // Filter metrics to the selected program (or keep all)
+//   const filtered = selectedProg === ALL_PROG
+//     ? metrics
+//     : metrics.filter(m => m.program.trim() === selectedProg);
+
+//   // ranking_year → label → summed value
+//   const yearMap = new Map<number, Map<string, number>>();
+
+//   for (const m of filtered) {
+//     if (isBAD(m.value) || !m.ranking_year) continue;
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     const match = matchStudentSeries(m.metric);
+//     if (!match) continue;
+
+//     if (!yearMap.has(m.ranking_year)) yearMap.set(m.ranking_year, new Map());
+//     const ym = yearMap.get(m.ranking_year)!;
+//     ym.set(match.label, (ym.get(match.label) ?? 0) + val);
+//   }
+
+//   const years = Array.from(yearMap.keys()).sort((a, b) => a - b);
+//   if (years.length < 2) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     const ym = yearMap.get(yr)!;
+//     for (const [label, val] of ym) pt[label] = val;
+//     return pt;
+//   });
+
+//   const active = (chart: StudentChart) =>
+//     STUDENT_SERIES
+//       .filter(s => s.chart === chart)
+//       .map(s => s.label)
+//       .filter(l => data.filter(d => d[l] != null).length >= 2);
+
+//   const compSeries = active("composition");
+//   const divSeries  = active("diversity");
+//   const feeSeries  = active("fee");
+
+//   if (!compSeries.length && !divSeries.length && !feeSeries.length) return null;
+
+//   // Shared selector rendered above the first chart
+//   const selector = (
+//     <ProgramSelector
+//       programs={progs}
+//       selected={selectedProg}
+//       onChange={setSelectedProg}
+//     />
+//   );
+
+//   return (
+//     <>
+//       {compSeries.length >= 2 && (
+//         <ChartCard title="Student Composition — Trend by Ranking Year">
+//           {selector}
+//           <ResponsiveContainer width="100%" height={240}>
+//             <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//               <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//               <XAxis dataKey="year" {...AX} />
+//               <YAxis {...AX} />
+//               <Tooltip content={<Tip />} />
+//               <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//               {compSeries.map(k => (
+//                 <Line key={k} type="monotone" dataKey={k}
+//                   stroke={STUDENT_COLORS[k] ?? PALETTE[0]} strokeWidth={1.8}
+//                   dot={{ r: 3, strokeWidth: 0, fill: STUDENT_COLORS[k] ?? PALETTE[0] }}
+//                   activeDot={{ r: 5 }} connectNulls />
+//               ))}
+//             </LineChart>
+//           </ResponsiveContainer>
+//         </ChartCard>
+//       )}
+
+//       {divSeries.length >= 2 && (
+//         <ChartCard title="Student Diversity — Trend by Ranking Year">
+//           {selector}
+//           <ResponsiveContainer width="100%" height={240}>
+//             <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//               <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//               <XAxis dataKey="year" {...AX} />
+//               <YAxis {...AX} />
+//               <Tooltip content={<Tip />} />
+//               <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//               {divSeries.map(k => (
+//                 <Line key={k} type="monotone" dataKey={k}
+//                   stroke={STUDENT_COLORS[k] ?? PALETTE[1]} strokeWidth={1.8}
+//                   dot={{ r: 3, strokeWidth: 0, fill: STUDENT_COLORS[k] ?? PALETTE[1] }}
+//                   activeDot={{ r: 5 }} connectNulls />
+//               ))}
+//             </LineChart>
+//           </ResponsiveContainer>
+//         </ChartCard>
+//       )}
+
+//       {feeSeries.length >= 2 && (
+//         <ChartCard title="Fee Reimbursement — Trend by Ranking Year">
+//           {selector}
+//           <ResponsiveContainer width="100%" height={240}>
+//             <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//               <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//               <XAxis dataKey="year" {...AX} />
+//               <YAxis {...AX} />
+//               <Tooltip content={<Tip />} />
+//               <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//               {feeSeries.map(k => (
+//                 <Line key={k} type="monotone" dataKey={k}
+//                   stroke={STUDENT_COLORS[k] ?? PALETTE[2]} strokeWidth={1.8}
+//                   dot={{ r: 3, strokeWidth: 0, fill: STUDENT_COLORS[k] ?? PALETTE[2] }}
+//                   activeDot={{ r: 5 }} connectNulls />
+//               ))}
+//             </LineChart>
+//           </ResponsiveContainer>
+//         </ChartCard>
+//       )}
+//     </>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// "use client";
+// /**
+//  * NIRFCharts.tsx
+//  * ─────────────────────────────────────────────────────────────────────────────
+//  * Trend-line charts for every InstituteDetail tab.
+//  * Every chart is null-safe — renders nothing when data is insufficient.
+//  *
+//  * Exports:
+//  *   ScoresTrendChart      — one line per NIRF parameter (SS, FSR…) over ranking years
+//  *   IntakeTrendChart      — one line per program over academic years
+//  *   PlacementTrendChart   — placed / salary / higher studies per program over grad years
+//  *   FinancialTrendChart   — one line per expenditure line item over academic years (₹ Cr)
+//  *   ResearchTrendChart    — projects / agencies / amount per section over academic years
+//  */
+
+// import React, { useState } from "react";
+// import {
+//   LineChart, Line,
+//   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+// } from "recharts";
+
+// // ── Theme ──────────────────────────────────────────────────────────────────────
+// const PALETTE = [
+//   "#c0392b", "#1a7a6e", "#7d4fa8", "#b5651d",
+//   "#2e6da4", "#5a8a3a", "#c0762b", "#2b6dc0",
+//   "#8a5a2e", "#3a8a5a", "#6d2eb5", "#b52e6d",
+// ];
+// const MONO    = "'IBM Plex Mono', monospace";
+// const BORDER  = "#e4e2dd";
+// const INK300  = "#a8a49c";
+// const CRIMSON = "#c0392b";
+
+// // ── Shared primitives ─────────────────────────────────────────────────────────
+// export function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+//   return (
+//     <div style={{
+//       background: "var(--white)", border: `1px solid ${BORDER}`,
+//       padding: "16px 20px 20px", marginBottom: 14,
+//       boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+//     }}>
+//       <p style={{
+//         fontFamily: MONO, fontSize: "0.6rem", textTransform: "uppercase",
+//         letterSpacing: "0.1em", color: CRIMSON,
+//         marginBottom: 14, paddingBottom: 6, borderBottom: `1px solid ${BORDER}`,
+//       }}>
+//         {title}
+//       </p>
+//       {children}
+//     </div>
+//   );
+// }
+
+// // ── Program Selector ──────────────────────────────────────────────────────────
+// // Pill-style buttons that sit beside the chart title.
+// // "All" is always the first option.
+
+// const ALL_PROG = "All Programs";
+
+// export function ProgramSelector({
+//   programs,
+//   selected,
+//   onChange,
+// }: {
+//   programs: string[];
+//   selected: string;
+//   onChange: (p: string) => void;
+// }) {
+//   if (programs.length <= 1) return null;
+//   const opts = [ALL_PROG, ...programs];
+//   return (
+//     <div style={{
+//       display: "flex",
+//       flexWrap: "wrap",
+//       gap: 6,
+//       marginBottom: 14,
+//       paddingBottom: 12,
+//       borderBottom: `1px solid ${BORDER}`,
+//     }}>
+//       <span style={{
+//         fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
+//         letterSpacing: "0.08em", color: INK300,
+//         alignSelf: "center", marginRight: 4, flexShrink: 0,
+//       }}>
+//         Program
+//       </span>
+//       {opts.map(p => {
+//         const active = p === selected;
+//         return (
+//           <button
+//             key={p}
+//             onClick={() => onChange(p)}
+//             style={{
+//               fontFamily: MONO,
+//               fontSize: "0.65rem",
+//               padding: "3px 10px",
+//               border: `1px solid ${active ? CRIMSON : BORDER}`,
+//               background: active ? CRIMSON : "var(--white)",
+//               color: active ? "#fff" : INK300,
+//               cursor: "pointer",
+//               borderRadius: 2,
+//               transition: "all 0.12s",
+//               whiteSpace: "nowrap",
+//             }}
+//           >
+//             {p === ALL_PROG ? "All" : p}
+//           </button>
+//         );
+//       })}
+//     </div>
+//   );
+// }
+
+// function Tip({ active, payload, label, fmt }: any) {
+//   if (!active || !payload?.length) return null;
+//   return (
+//     <div style={{ background: "#1a1916", border: "1px solid #3d3b36", fontFamily: MONO, fontSize: "0.68rem", color: "#f7f6f3" }}>
+//       <p style={{ padding: "6px 10px 4px", color: INK300, borderBottom: "1px solid #3d3b36", marginBottom: 4 }}>{label}</p>
+//       {payload.map((p: any, i: number) => (
+//         <p key={i} style={{ padding: "2px 10px", color: p.color }}>
+//           {p.name}: <strong>{fmt ? fmt(p.value, p.name) : p.value?.toLocaleString("en-IN")}</strong>
+//         </p>
+//       ))}
+//       <div style={{ height: 6 }} />
+//     </div>
+//   );
+// }
+
+// const AX = { axisLine: false, tickLine: false, tick: { fontFamily: MONO, fontSize: 10, fill: INK300 } };
+
+// // ── Helpers ───────────────────────────────────────────────────────────────────
+// const BAD_V = new Set(["", "nan", "<na>", "-", "n/a", "na", "null", "undefined", "none"]);
+// const isBAD = (v: any) => BAD_V.has(String(v ?? "").trim().toLowerCase());
+// const toNum = (v: any) => { const n = Number(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? null : n; };
+// function baseYear(y: string) { return y.trim().match(/^(\d{4}-\d{2})/)?.[1] ?? y.trim(); }
+// function isRealYear(y: any) { const s = String(y ?? "").trim(); return !isBAD(s) && /^\d{4}(-\d{2})?/.test(s); }
+// function sortYrs(years: string[]) {
+//   return [...years].sort((a, b) => { const ay = parseInt(a), by = parseInt(b); return isNaN(ay) || isNaN(by) ? a.localeCompare(b) : ay - by; });
+// }
+// const shorten = (s: string, n = 22) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+// export interface RawMetric { metric: string; year: string; value: string; ranking_year: number; program: string; }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 1. SCORES — one line per NIRF parameter over ranking years
+// // ─────────────────────────────────────────────────────────────────────────────
+// const PARAM_SHORT: Record<string, string> = {
+//   img_ss_score: "SS", img_fsr_score: "FSR", img_fqe_score: "FQE", img_fru_score: "FRU",
+//   img_oe_mir_score: "OE/MIR", img_pu_score: "PU", img_qp_score: "QP", img_ipr_score: "IPR",
+//   img_fppp_score: "FPPP", img_gue_score: "GUE", img_gphd_score: "GPHD", img_rd_score: "RD",
+//   img_wd_score: "WD", img_escs_score: "ESCS", img_pcs_score: "PCS", img_pr_score: "PR",
+// };
+// const PARAM_FULL: Record<string, string> = {
+//   SS: "Student Strength", FSR: "Faculty–Student Ratio", FQE: "Faculty Qualification",
+//   FRU: "Faculty Research", "OE/MIR": "Outreach & Inclusivity", PU: "Perception",
+//   QP: "Quality Publication", IPR: "IPR & Patents", FPPP: "Footprint of Projects",
+//   GUE: "Graduate Performance", GPHD: "PhD Graduates", RD: "R&D", WD: "Wider Impact",
+//   ESCS: "Economic & Social", PCS: "Peer Perception", PR: "Perception",
+// };
+
+// export function ScoresTrendChart({
+//   scoresByYear,
+//   imgCols,
+// }: {
+//   scoresByYear: Record<number, Record<string, unknown>>;
+//   imgCols: string[];
+// }) {
+//   const years = Object.keys(scoresByYear).map(Number).sort((a, b) => a - b);
+//   if (years.length < 2 || !imgCols.length) return null;
+
+//   const data = years.map(yr => {
+//     const row = scoresByYear[yr] as Record<string, unknown>;
+//     const pt: Record<string, any> = { year: yr };
+//     for (const k of imgCols) {
+//       const v = row[k];
+//       if (v != null) pt[PARAM_SHORT[k] ?? k] = +Number(v).toFixed(2);
+//     }
+//     return pt;
+//   });
+
+//   const active = imgCols.filter(k => data.filter(d => d[PARAM_SHORT[k] ?? k] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title="Parameter Scores — Trend by Ranking Year">
+//       <ResponsiveContainer width="100%" height={260}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis domain={[0, "auto"]} {...AX} />
+//           <Tooltip content={<Tip fmt={(v: number) => v?.toFixed(2)} />} />
+//           <Legend
+//             wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }}
+//             formatter={(val) => PARAM_FULL[val] ?? val}
+//           />
+//           {active.map((k, i) => (
+//             <Line key={k} type="monotone" dataKey={PARAM_SHORT[k] ?? k}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 2. INTAKE — one line per program over academic years + program selector
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function IntakeTrendChart({ metrics }: { metrics: RawMetric[] }) {
+//   const valid = metrics.filter(m => isRealYear(m.year) && !isBAD(m.value) && !isBAD(m.program));
+//   if (!valid.length) return null;
+
+//   const yearSet = new Set<string>();
+//   const map = new Map<string, Map<string, number>>(); // program → year → total
+
+//   for (const m of valid) {
+//     const yr   = baseYear(m.year);
+//     const prog = m.program.trim();
+//     const val  = toNum(m.value);
+//     if (!val || val <= 0) continue;
+//     yearSet.add(yr);
+//     if (!map.has(prog)) map.set(prog, new Map());
+//     map.get(prog)!.set(yr, (map.get(prog)!.get(yr) ?? 0) + val);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   const progs = Array.from(map.keys()).sort();
+//   if (years.length < 2 || !progs.length) return null;
+
+//   // Colour index stable per prog (not per filtered subset)
+//   const progColor = Object.fromEntries(progs.map((p, i) => [p, PALETTE[i % PALETTE.length]]));
+
+//   // eslint-disable-next-line react-hooks/rules-of-hooks
+//   const [selectedProg, setSelectedProg] = useState(ALL_PROG);
+
+//   // Which programs are visible
+//   const visibleProgs = selectedProg === ALL_PROG
+//     ? progs.filter(p => {
+//         const data = years.map(yr => map.get(p)!.get(yr) ?? null);
+//         return data.filter(v => v != null).length >= 2;
+//       })
+//     : progs.filter(p => p === selectedProg);
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const p of visibleProgs) {
+//       const v = map.get(p)!.get(yr);
+//       if (v != null) pt[shorten(p, 20)] = v;
+//     }
+//     return pt;
+//   });
+
+//   return (
+//     <ChartCard title="Sanctioned Intake — Trend by Academic Year">
+//       <ProgramSelector
+//         programs={progs}
+//         selected={selectedProg}
+//         onChange={setSelectedProg}
+//       />
+//       <ResponsiveContainer width="100%" height={240}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis {...AX} />
+//           <Tooltip content={<Tip />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {visibleProgs.map(p => (
+//             <Line
+//               key={p}
+//               type="monotone"
+//               dataKey={shorten(p, 20)}
+//               stroke={progColor[p]}
+//               strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: progColor[p] }}
+//               activeDot={{ r: 5 }}
+//               connectNulls
+//             />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 3. PLACEMENT — full trend covering all year types:
+// //    • Graduation Year  → Placed, Graduated, Higher Studies, Median Salary
+// //    • Intake Year      → Intake (sanctioned), Admitted
+// //    • Lateral Entry    → Lateral Entry admissions
+// //
+// //    X-axis = base academic year (e.g. "2019-20")
+// //    Salary on right Y-axis (₹ L), all counts on left
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function PlacementTrendChart({ metrics, program }: { metrics: RawMetric[]; program: string }) {
+//   // Keys — graduation year series
+//   const K_PLACED   = "Placed";
+//   const K_HIGHER   = "Higher Studies";
+//   const K_GRAD     = "Graduated";
+//   const K_SALARY   = "Median Salary (L)";
+//   // Keys — intake year series
+//   const K_INTAKE   = "Intake (Sanctioned)";
+//   const K_ADMITTED = "Admitted";
+//   const K_LATERAL  = "Lateral Entry";
+
+//   const yearSet = new Set<string>();
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   const addVal = (key: string, yr: string, val: number) => {
+//     yearSet.add(yr);
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     const prev = mmap.get(key)!.get(yr) ?? 0;
+//     mmap.get(key)!.set(yr, Math.max(prev, val));
+//   };
+
+//   for (const m of metrics) {
+//     if (isBAD(m.value) || isBAD(m.year)) continue;
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     const yr  = baseYear(m.year);
+//     if (!yr) continue;
+//     const ml  = m.year.toLowerCase();
+//     const met = m.metric.toLowerCase();
+
+//     if (ml.includes("graduation")) {
+//       if (met.includes("students placed"))                                         addVal(K_PLACED,   yr, val);
+//       else if (met.includes("higher stud") || met.includes("selected for higher")) addVal(K_HIGHER,   yr, val);
+//       else if (met.includes("graduating in minimum"))                              addVal(K_GRAD,     yr, val);
+//       else if (met.includes("salary") || met.includes("median"))                  addVal(K_SALARY,   yr, +(val / 100_000).toFixed(2));
+//     } else if (ml.includes("intake year")) {
+//       if (met.includes("intake in the year") || met.includes("sanctioned intake")) addVal(K_INTAKE,   yr, val);
+//       else if (met.includes("admitted in the year"))                               addVal(K_ADMITTED, yr, val);
+//     } else if (ml.includes("lateral entry")) {
+//       if (met.includes("lateral entry") || met.includes("admitted through lateral")) addVal(K_LATERAL, yr, val);
+//     }
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2) return null;
+
+//   // Determine which metric groups actually have data
+//   const gradKeys   = [K_PLACED, K_GRAD, K_HIGHER].filter(k => mmap.has(k));
+//   const intakeKeys = [K_INTAKE, K_ADMITTED, K_LATERAL].filter(k => mmap.has(k));
+//   const hasSalary  = mmap.has(K_SALARY);
+
+//   // Build available group tabs
+//   const GROUPS: string[] = [];
+//   if (gradKeys.length)   GROUPS.push("Graduation");
+//   if (intakeKeys.length) GROUPS.push("Intake");
+//   if (GROUPS.length > 1) GROUPS.unshift("All");
+
+//   // eslint-disable-next-line react-hooks/rules-of-hooks
+//   const [group, setGroup] = useState(GROUPS[0] ?? "All");
+
+//   const activeGroup = GROUPS.includes(group) ? group : GROUPS[0];
+
+//   // Which count keys are visible in this group
+//   const visibleCountKeys = (() => {
+//     const allCount = [...gradKeys, ...intakeKeys];
+//     if (activeGroup === "All")       return allCount;
+//     if (activeGroup === "Graduation") return gradKeys;
+//     if (activeGroup === "Intake")     return intakeKeys;
+//     return allCount;
+//   })().filter(k => {
+//     const d = years.map(yr => mmap.get(k)!.get(yr) ?? null);
+//     return d.filter(v => v != null).length >= 2;
+//   });
+
+//   const showSalary = hasSalary && (activeGroup === "All" || activeGroup === "Graduation");
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const k of visibleCountKeys) { const v = mmap.get(k)!.get(yr); if (v != null) pt[k] = v; }
+//     if (showSalary) { const v = mmap.get(K_SALARY)!.get(yr); if (v != null) pt[K_SALARY] = v; }
+//     return pt;
+//   });
+
+//   if (!visibleCountKeys.length && !showSalary) return null;
+
+//   const KC: Record<string, string> = {
+//     [K_PLACED]:   PALETTE[0],
+//     [K_GRAD]:     PALETTE[2],
+//     [K_HIGHER]:   PALETTE[1],
+//     [K_SALARY]:   PALETTE[3],
+//     [K_INTAKE]:   PALETTE[4],
+//     [K_ADMITTED]: PALETTE[5],
+//     [K_LATERAL]:  PALETTE[6],
+//   };
+
+//   const fmtTip = (v: number, name: string) =>
+//     name === K_SALARY ? `₹${v}L` : v?.toLocaleString("en-IN");
+
+//   return (
+//     <ChartCard title={`Placement Trend — ${shorten(program, 42)}`}>
+//       {/* Metric group selector */}
+//       {GROUPS.length > 1 && (
+//         <div style={{
+//           display: "flex", gap: 6, flexWrap: "wrap",
+//           marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${BORDER}`,
+//         }}>
+//           <span style={{
+//             fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
+//             letterSpacing: "0.08em", color: INK300, alignSelf: "center", marginRight: 4,
+//           }}>
+//             View
+//           </span>
+//           {GROUPS.map(g => {
+//             const active = g === activeGroup;
+//             return (
+//               <button key={g} onClick={() => setGroup(g)} style={{
+//                 fontFamily: MONO, fontSize: "0.65rem", padding: "3px 10px",
+//                 border: `1px solid ${active ? CRIMSON : BORDER}`,
+//                 background: active ? CRIMSON : "var(--white)",
+//                 color: active ? "#fff" : INK300,
+//                 cursor: "pointer", borderRadius: 2, transition: "all 0.12s",
+//               }}>
+//                 {g}
+//               </button>
+//             );
+//           })}
+//         </div>
+//       )}
+
+//       <ResponsiveContainer width="100%" height={260}>
+//         <LineChart data={data} margin={{ top: 4, right: showSalary ? 56 : 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis yAxisId="left" {...AX} />
+//           {showSalary && (
+//             <YAxis yAxisId="right" orientation="right"
+//               tickFormatter={v => `₹${v}L`} axisLine={false} tickLine={false}
+//               tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_SALARY] }} />
+//           )}
+//           <Tooltip content={<Tip fmt={fmtTip} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {visibleCountKeys.map(k => (
+//             <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+//               stroke={KC[k]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//           {showSalary && (
+//             <Line yAxisId="right" type="monotone" dataKey={K_SALARY}
+//               stroke={KC[K_SALARY]} strokeWidth={1.8} strokeDasharray="5 3"
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[K_SALARY] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           )}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 4. FINANCIAL — one line per line item over academic years (₹ Cr)
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function FinancialTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+//   const valid = metrics.filter(m =>
+//     !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") &&
+//     !isBAD(m.program) && isRealYear(m.year)
+//   );
+//   if (!valid.length) return null;
+
+//   const yearSet = new Set<string>();
+//   const lineMap = new Map<string, Map<string, number>>();
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const prog = m.program.trim();
+//     const val = toNum(m.value);
+//     if (!val || val <= 0) continue;
+//     yearSet.add(yr);
+//     if (!lineMap.has(prog)) lineMap.set(prog, new Map());
+//     lineMap.get(prog)!.set(yr, +(val / 1e7).toFixed(2));
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   const lines = Array.from(lineMap.keys()).sort();
+//   if (years.length < 2 || !lines.length) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const l of lines) { const v = lineMap.get(l)!.get(yr); if (v != null) pt[shorten(l, 22)] = v; }
+//     return pt;
+//   });
+
+//   const active = lines.filter(l => data.filter(d => d[shorten(l, 22)] != null).length >= 2);
+//   if (!active.length) return null;
+
+//   return (
+//     <ChartCard title={`${title} — Trend by Year (₹ Crore)`}>
+//       <ResponsiveContainer width="100%" height={Math.min(280, 140 + active.length * 20)}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -4 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis tickFormatter={v => `₹${v}Cr`} {...AX} />
+//           <Tooltip content={<Tip fmt={(v: number) => `₹${v} Cr`} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {active.map((l, i) => (
+//             <Line key={l} type="monotone" dataKey={shorten(l, 22)}
+//               stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+//               activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 5. RESEARCH — projects / agencies / amount over academic years
+// //    Amount on right axis (₹ Cr), counts on left
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function ResearchTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+//   const valid = metrics.filter(m =>
+//     !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") && isRealYear(m.year)
+//   );
+//   if (!valid.length) return null;
+
+//   const K_PROJ  = "Projects / Programs";
+//   const K_AGENCY = "Funding Agencies";
+//   const K_AMT   = "Amount (Cr)";
+//   const K_PART  = "Participants";
+
+//   const yearSet = new Set<string>();
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   for (const m of valid) {
+//     const yr = baseYear(m.year);
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     yearSet.add(yr);
+//     const ml = m.metric.toLowerCase();
+//     let key: string | null = null;
+//     if (ml.includes("no. of") && (ml.includes("project") || ml.includes("program")))   key = K_PROJ;
+//     else if (ml.includes("total no.") && ml.includes("project"))                        key = K_PROJ;
+//     else if (ml.includes("number of projects") || ml.includes("number of programs"))    key = K_PROJ;
+//     else if (ml.includes("funding agenc") || ml.includes("no. of agenc"))               key = K_AGENCY;
+//     else if (ml.includes("participants"))                                                key = K_PART;
+//     else if (ml.includes("amount") && !ml.includes("words"))                            key = K_AMT;
+//     if (!key) continue;
+//     const mapped = key === K_AMT ? +(val / 1e7).toFixed(2) : val;
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     mmap.get(key)!.set(yr, (mmap.get(key)!.get(yr) ?? 0) + mapped);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2 || !mmap.size) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const [k, ym] of mmap) { const v = ym.get(yr); if (v != null) pt[k] = v; }
+//     return pt;
+//   });
+
+//   const countKeys = [K_PROJ, K_AGENCY, K_PART].filter(k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2);
+//   const hasAmt    = mmap.has(K_AMT) && data.filter(d => d[K_AMT] != null).length >= 2;
+//   if (!countKeys.length && !hasAmt) return null;
+
+//   const KC: Record<string, string> = { [K_PROJ]: PALETTE[0], [K_AGENCY]: PALETTE[1], [K_PART]: PALETTE[2], [K_AMT]: PALETTE[3] };
+
+//   return (
+//     <ChartCard title={`${title} — Trend by Year`}>
+//       <ResponsiveContainer width="100%" height={220}>
+//         <LineChart data={data} margin={{ top: 4, right: hasAmt ? 56 : 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis yAxisId="left" {...AX} />
+//           {hasAmt && (
+//             <YAxis yAxisId="right" orientation="right"
+//               tickFormatter={v => `₹${v}Cr`} axisLine={false} tickLine={false}
+//               tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_AMT] }} />
+//           )}
+//           <Tooltip content={<Tip fmt={(v: number, name: string) => name === K_AMT ? `₹${v} Cr` : v?.toLocaleString("en-IN")} />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {countKeys.map(k => (
+//             <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+//               stroke={KC[k]} strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }} activeDot={{ r: 5 }} connectNulls />
+//           ))}
+//           {hasAmt && (
+//             <Line yAxisId="right" type="monotone" dataKey={K_AMT}
+//               stroke={KC[K_AMT]} strokeWidth={1.8} strokeDasharray="5 3"
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[K_AMT] }} activeDot={{ r: 5 }} connectNulls />
+//           )}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 6. PhD — graduated (Full Time + Part Time) over academic years
+// //    Pulls from all ranking year submissions combined so the full
+// //    2019-20 → 2023-24 run is visible in one chart.
+// //
+// //    Data shape:
+// //      program = "No. of Ph.D students graduated..."
+// //      year    = "2021-22", "2022-23", ...
+// //      metric  = "Full Time Graduated" | "Part Time Graduated"
+// // ─────────────────────────────────────────────────────────────────────────────
+// export function PhdTrendChart({ metrics }: { metrics: RawMetric[] }) {
+//   const K_FT = "Full Time Graduated";
+//   const K_PT = "Part Time Graduated";
+
+//   const yearSet = new Set<string>();
+//   // key → year → value  (keep max across duplicate ranking-year submissions)
+//   const mmap = new Map<string, Map<string, number>>();
+
+//   const set = (key: string, yr: string, val: number) => {
+//     yearSet.add(yr);
+//     if (!mmap.has(key)) mmap.set(key, new Map());
+//     const prev = mmap.get(key)!.get(yr) ?? 0;
+//     mmap.get(key)!.set(yr, Math.max(prev, val));
+//   };
+
+//   for (const m of metrics) {
+//     if (isBAD(m.value) || !isRealYear(m.year)) continue;
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     const yr  = baseYear(m.year);
+//     const met = m.metric.toLowerCase();
+//     if (met.includes("full time"))       set(K_FT, yr, val);
+//     else if (met.includes("part time"))  set(K_PT, yr, val);
+//   }
+
+//   const years = sortYrs(Array.from(yearSet));
+//   if (years.length < 2) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     for (const [k, ym] of mmap) {
+//       const v = ym.get(yr);
+//       if (v != null) pt[k] = v;
+//     }
+//     return pt;
+//   });
+
+//   const active = [K_FT, K_PT].filter(
+//     k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2,
+//   );
+//   if (!active.length) return null;
+
+//   const KC: Record<string, string> = {
+//     [K_FT]: PALETTE[2],  // purple
+//     [K_PT]: PALETTE[1],  // teal
+//   };
+
+//   return (
+//     <ChartCard title="PhD Graduated — Trend by Academic Year">
+//       <ResponsiveContainer width="100%" height={220}>
+//         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//           <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//           <XAxis dataKey="year" {...AX} />
+//           <YAxis {...AX} />
+//           <Tooltip content={<Tip />} />
+//           <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//           {active.map(k => (
+//             <Line
+//               key={k}
+//               type="monotone"
+//               dataKey={k}
+//               stroke={KC[k]}
+//               strokeWidth={1.8}
+//               dot={{ r: 3, strokeWidth: 0, fill: KC[k] }}
+//               activeDot={{ r: 5 }}
+//               connectNulls
+//             />
+//           ))}
+//         </LineChart>
+//       </ResponsiveContainer>
+//     </ChartCard>
+//   );
+// }
+
+// // ─────────────────────────────────────────────────────────────────────────────
+// // 7. STUDENTS — all 12 metrics trend over ranking years
+// //
+// //    Students data has no academic year axis — snapshot per ranking year.
+// //    X-axis = ranking_year (2020 … 2025).
+// //    Values summed across all programs for institution-level totals.
+// //
+// //    Three charts:
+// //      A — Composition : Total Students, Male, Female
+// //      B — Diversity   : SC/ST/OBC, Within State, Outside State,
+// //                        Outside Country, Econ. Backward
+// //      C — Fee Status  : Reimbursed (Inst), Reimbursed (Govt),
+// //                        Reimbursed (Private), Not Receiving
+// // ─────────────────────────────────────────────────────────────────────────────
+
+// interface StudentRawMetric extends RawMetric { ranking_year: number; }
+
+// type StudentChart = "composition" | "diversity" | "fee";
+
+// const STUDENT_SERIES: Array<{ match: string[]; label: string; chart: StudentChart }> = [
+//   // Composition — order: Female BEFORE Male to prevent "female students" matching "male students"
+//   { match: ["total students"],                                             label: "Total Students",       chart: "composition" },
+//   { match: ["no. of female", "of female students"],                       label: "Female",               chart: "composition" },
+//   { match: ["no. of male", "of male students"],                           label: "Male",                 chart: "composition" },
+//   // Diversity
+//   { match: ["sc+st+obc", "socially challenged"],                          label: "SC/ST/OBC",            chart: "diversity"    },
+//   { match: ["within state"],                                              label: "Within State",         chart: "diversity"    },
+//   { match: ["outside state"],                                             label: "Outside State",        chart: "diversity"    },
+//   { match: ["outside country"],                                           label: "Outside Country",      chart: "diversity"    },
+//   { match: ["economically backward"],                                     label: "Econ. Backward",       chart: "diversity"    },
+//   // Fee reimbursement — most specific first
+//   { match: ["institution funds", "from institution"],                     label: "Reimb. (Institution)", chart: "fee"          },
+//   { match: ["private bod", "from private"],                               label: "Reimb. (Private)",     chart: "fee"          },
+//   { match: ["state and central", "central government", "from the state"], label: "Reimb. (Govt)",        chart: "fee"          },
+//   { match: ["not receiving full tuition", "not receiving"],               label: "Not Reimbursed",       chart: "fee"          },
+// ];
+
+// function matchStudentSeries(metric: string): { label: string; chart: StudentChart } | null {
+//   const ml = metric.toLowerCase();
+//   for (const s of STUDENT_SERIES) {
+//     if (s.match.some(kw => ml.includes(kw))) return { label: s.label, chart: s.chart };
+//   }
+//   return null;
+// }
+
+// const STUDENT_COLORS: Record<string, string> = {
+//   // Composition
+//   "Total Students":       PALETTE[4],   // blue
+//   "Male":                 PALETTE[0],   // crimson
+//   "Female":               PALETTE[1],   // teal
+//   // Diversity
+//   "SC/ST/OBC":            PALETTE[2],   // purple
+//   "Within State":         PALETTE[4],   // blue
+//   "Outside State":        PALETTE[3],   // amber
+//   "Outside Country":      PALETTE[5],   // green
+//   "Econ. Backward":       PALETTE[6],   // orange
+//   // Fee
+//   "Reimb. (Institution)": PALETTE[1],   // teal
+//   "Reimb. (Private)":     PALETTE[5],   // green
+//   "Reimb. (Govt)":        PALETTE[2],   // purple
+//   "Not Reimbursed":       PALETTE[0],   // crimson
+// };
+
+// export function StudentsTrendChart({ metrics }: { metrics: StudentRawMetric[] }) {
+//   // Collect all distinct programs
+//   const progSet = new Set<string>();
+//   for (const m of metrics) {
+//     if (!isBAD(m.program) && m.program.trim() !== "-") progSet.add(m.program.trim());
+//   }
+//   const progs = Array.from(progSet).sort();
+
+//   // eslint-disable-next-line react-hooks/rules-of-hooks
+//   const [selectedProg, setSelectedProg] = useState(ALL_PROG);
+
+//   // Filter metrics to selected program
+//   const filtered = selectedProg === ALL_PROG
+//     ? metrics
+//     : metrics.filter(m => m.program.trim() === selectedProg);
+
+//   // ranking_year → label → summed value
+//   const yearMap = new Map<number, Map<string, number>>();
+//   for (const m of filtered) {
+//     if (isBAD(m.value) || !m.ranking_year) continue;
+//     const val = toNum(m.value);
+//     if (val === null || val < 0) continue;
+//     const match = matchStudentSeries(m.metric);
+//     if (!match) continue;
+//     if (!yearMap.has(m.ranking_year)) yearMap.set(m.ranking_year, new Map());
+//     const ym = yearMap.get(m.ranking_year)!;
+//     ym.set(match.label, (ym.get(match.label) ?? 0) + val);
+//   }
+
+//   const years = Array.from(yearMap.keys()).sort((a, b) => a - b);
+//   if (years.length < 2) return null;
+
+//   const data = years.map(yr => {
+//     const pt: Record<string, any> = { year: yr };
+//     const ym = yearMap.get(yr)!;
+//     for (const [label, val] of ym) pt[label] = val;
+//     return pt;
+//   });
+
+//   // Series with ≥2 data points (≥1 when a specific program is selected to avoid blank charts)
+//   const minPoints = selectedProg === ALL_PROG ? 2 : 1;
+//   const activeSeries = (chart: StudentChart) =>
+//     STUDENT_SERIES
+//       .filter(s => s.chart === chart)
+//       .map(s => s.label)
+//       .filter(l => data.filter(d => d[l] != null).length >= minPoints);
+
+//   const compSeries = activeSeries("composition");
+//   const divSeries  = activeSeries("diversity");
+//   const feeSeries  = activeSeries("fee");
+
+//   if (!compSeries.length && !divSeries.length && !feeSeries.length) return null;
+
+//   // Inline chart renderer — takes series labels, renders a full chart card
+//   // selector is rendered fresh inside each card so React doesn't share instances
+//   const renderChart = (title: string, series: string[]) => {
+//     if (!series.length) return null;
+//     return (
+//       <ChartCard title={title}>
+//         <ProgramSelector
+//           programs={progs}
+//           selected={selectedProg}
+//           onChange={setSelectedProg}
+//         />
+//         <ResponsiveContainer width="100%" height={240}>
+//           <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+//             <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+//             <XAxis dataKey="year" {...AX} />
+//             <YAxis {...AX} />
+//             <Tooltip content={<Tip />} />
+//             <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+//             {series.map(k => (
+//               <Line
+//                 key={k}
+//                 type="monotone"
+//                 dataKey={k}
+//                 stroke={STUDENT_COLORS[k] ?? PALETTE[0]}
+//                 strokeWidth={1.8}
+//                 dot={{ r: 3, strokeWidth: 0, fill: STUDENT_COLORS[k] ?? PALETTE[0] }}
+//                 activeDot={{ r: 5 }}
+//                 connectNulls
+//               />
+//             ))}
+//           </LineChart>
+//         </ResponsiveContainer>
+//       </ChartCard>
+//     );
+//   };
+
+//   return (
+//     <>
+//       {renderChart("Student Composition — Trend by Ranking Year",  compSeries)}
+//       {renderChart("Student Diversity — Trend by Ranking Year",    divSeries)}
+//       {renderChart("Fee Reimbursement — Trend by Ranking Year",    feeSeries)}
+//     </>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"use client";
+/**
+ * NIRFCharts.tsx
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Trend-line charts for every InstituteDetail tab.
+ * Every chart is null-safe — renders nothing when data is insufficient.
+ *
+ * Exports:
+ *   ScoresTrendChart      — one line per NIRF parameter (SS, FSR…) over ranking years
+ *   IntakeTrendChart      — one line per program over academic years
+ *   PlacementTrendChart   — placed / salary / higher studies per program over grad years
+ *   FinancialTrendChart   — one line per expenditure line item over academic years (₹ Cr)
+ *   ResearchTrendChart    — projects / agencies / amount per section over academic years
+ */
+
+import React, { useState } from "react";
+import {
+  LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
+
+// ── Theme ──────────────────────────────────────────────────────────────────────
+const PALETTE = [
+  "#c0392b", "#1a7a6e", "#7d4fa8", "#b5651d",
+  "#2e6da4", "#5a8a3a", "#c0762b", "#2b6dc0",
+  "#8a5a2e", "#3a8a5a", "#6d2eb5", "#b52e6d",
+];
+const MONO    = "'IBM Plex Mono', monospace";
+const BORDER  = "#e4e2dd";
+const INK300  = "#a8a49c";
+const CRIMSON = "#c0392b";
+
+// ── Shared primitives ─────────────────────────────────────────────────────────
+export function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background: "var(--white)", border: `1px solid ${BORDER}`,
+      padding: "16px 20px 20px", marginBottom: 14,
+      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+    }}>
+      <p style={{
+        fontFamily: MONO, fontSize: "0.6rem", textTransform: "uppercase",
+        letterSpacing: "0.1em", color: CRIMSON,
+        marginBottom: 14, paddingBottom: 6, borderBottom: `1px solid ${BORDER}`,
+      }}>
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+// ── Program Selector ──────────────────────────────────────────────────────────
+// Pill-style buttons that sit beside the chart title.
+// "All" is always the first option.
+
+const ALL_PROG = "All Programs";
+
+export function ProgramSelector({
+  programs,
+  selected,
+  onChange,
+}: {
+  programs: string[];
+  selected: string;
+  onChange: (p: string) => void;
+}) {
+  if (programs.length <= 1) return null;
+  const opts = [ALL_PROG, ...programs];
+  return (
+    <div style={{
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: 14,
+      paddingBottom: 12,
+      borderBottom: `1px solid ${BORDER}`,
+    }}>
+      <span style={{
+        fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
+        letterSpacing: "0.08em", color: INK300,
+        alignSelf: "center", marginRight: 4, flexShrink: 0,
+      }}>
+        Program
+      </span>
+      {opts.map(p => {
+        const active = p === selected;
+        return (
+          <button
+            key={p}
+            onClick={() => onChange(p)}
+            style={{
+              fontFamily: MONO,
+              fontSize: "0.65rem",
+              padding: "3px 10px",
+              border: `1px solid ${active ? CRIMSON : BORDER}`,
+              background: active ? CRIMSON : "var(--white)",
+              color: active ? "#fff" : INK300,
+              cursor: "pointer",
+              borderRadius: 2,
+              transition: "all 0.12s",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {p === ALL_PROG ? "All" : p}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Tip({ active, payload, label, fmt }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: "#1a1916", border: "1px solid #3d3b36", fontFamily: MONO, fontSize: "0.68rem", color: "#f7f6f3" }}>
+      <p style={{ padding: "6px 10px 4px", color: INK300, borderBottom: "1px solid #3d3b36", marginBottom: 4 }}>{label}</p>
+      {payload.map((p: any, i: number) => (
+        <p key={i} style={{ padding: "2px 10px", color: p.color }}>
+          {p.name}: <strong>{fmt ? fmt(p.value, p.name) : p.value?.toLocaleString("en-IN")}</strong>
+        </p>
+      ))}
+      <div style={{ height: 6 }} />
+    </div>
+  );
+}
+
+const AX = { axisLine: false, tickLine: false, tick: { fontFamily: MONO, fontSize: 10, fill: INK300 } };
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const BAD_V = new Set(["", "nan", "<na>", "-", "n/a", "na", "null", "undefined", "none"]);
+const isBAD = (v: any) => BAD_V.has(String(v ?? "").trim().toLowerCase());
+const toNum = (v: any) => { const n = Number(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? null : n; };
+function baseYear(y: string) { return y.trim().match(/^(\d{4}-\d{2})/)?.[1] ?? y.trim(); }
+function isRealYear(y: any) { const s = String(y ?? "").trim(); return !isBAD(s) && /^\d{4}(-\d{2})?/.test(s); }
+function sortYrs(years: string[]) {
+  return [...years].sort((a, b) => { const ay = parseInt(a), by = parseInt(b); return isNaN(ay) || isNaN(by) ? a.localeCompare(b) : ay - by; });
+}
+const shorten = (s: string, n = 22) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+export interface RawMetric { metric: string; year: string; value: string; ranking_year: number; program: string; }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. SCORES — one line per NIRF parameter over ranking years
+// ─────────────────────────────────────────────────────────────────────────────
+const PARAM_SHORT: Record<string, string> = {
+  img_ss_score: "SS", img_fsr_score: "FSR", img_fqe_score: "FQE", img_fru_score: "FRU",
+  img_oe_mir_score: "OE/MIR", img_pu_score: "PU", img_qp_score: "QP", img_ipr_score: "IPR",
+  img_fppp_score: "FPPP", img_gue_score: "GUE", img_gphd_score: "GPHD", img_rd_score: "RD",
+  img_wd_score: "WD", img_escs_score: "ESCS", img_pcs_score: "PCS", img_pr_score: "PR",
+};
+const PARAM_FULL: Record<string, string> = {
+  SS: "Student Strength", FSR: "Faculty–Student Ratio", FQE: "Faculty Qualification",
+  FRU: "Faculty Research", "OE/MIR": "Outreach & Inclusivity", PU: "Perception",
+  QP: "Quality Publication", IPR: "IPR & Patents", FPPP: "Footprint of Projects",
+  GUE: "Graduate Performance", GPHD: "PhD Graduates", RD: "R&D", WD: "Wider Impact",
+  ESCS: "Economic & Social", PCS: "Peer Perception", PR: "Perception",
+};
+
+export function ScoresTrendChart({
+  scoresByYear,
+  imgCols,
+}: {
+  scoresByYear: Record<number, Record<string, unknown>>;
+  imgCols: string[];
+}) {
+  const years = Object.keys(scoresByYear).map(Number).sort((a, b) => a - b);
+  if (years.length < 2 || !imgCols.length) return null;
+
+  const data = years.map(yr => {
+    const row = scoresByYear[yr] as Record<string, unknown>;
+    const pt: Record<string, any> = { year: yr };
+    for (const k of imgCols) {
+      const v = row[k];
+      if (v != null) pt[PARAM_SHORT[k] ?? k] = +Number(v).toFixed(2);
+    }
+    return pt;
+  });
+
+  const active = imgCols.filter(
+    k => data.filter(d => d[PARAM_SHORT[k] ?? k] != null).length >= 2,
+  );
+  if (!active.length) return null;
+
+  // Colour stable per param key index
+  const paramColor = Object.fromEntries(
+    active.map((k, i) => [PARAM_SHORT[k] ?? k, PALETTE[i % PALETTE.length]]),
+  );
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(active.map(k => PARAM_SHORT[k] ?? k)),
+  );
+
+  const toggleParam = (key: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        // keep at least 1 selected
+        if (next.size > 1) next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const visibleParams = active.filter(k => selected.has(PARAM_SHORT[k] ?? k));
+
+  return (
+    <ChartCard title="Parameter Scores — Trend by Ranking Year">
+
+      {/* Parameter toggle pills */}
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: 6,
+        marginBottom: 16, paddingBottom: 14,
+        borderBottom: `1px solid ${BORDER}`,
+      }}>
+        <span style={{
+          fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
+          letterSpacing: "0.08em", color: INK300,
+          alignSelf: "center", marginRight: 4, flexShrink: 0,
+        }}>
+          Parameters
+        </span>
+        {/* All / None shortcuts */}
+        <button
+          onClick={() => setSelected(new Set(active.map(k => PARAM_SHORT[k] ?? k)))}
+          style={{
+            fontFamily: MONO, fontSize: "0.6rem", padding: "2px 8px",
+            border: `1px solid ${BORDER}`, background: "var(--white)",
+            color: INK300, cursor: "pointer", borderRadius: 2,
+          }}
+        >
+          All
+        </button>
+        {/* Individual param pills */}
+        {active.map(k => {
+          const key   = PARAM_SHORT[k] ?? k;
+          const label = PARAM_FULL[key] ?? key;
+          const on    = selected.has(key);
+          const color = paramColor[key];
+          return (
+            <button
+              key={k}
+              onClick={() => toggleParam(key)}
+              style={{
+                fontFamily: MONO, fontSize: "0.62rem", padding: "3px 10px",
+                border: `1px solid ${on ? color : BORDER}`,
+                background: on ? color : "var(--white)",
+                color: on ? "#fff" : INK300,
+                cursor: "pointer", borderRadius: 2,
+                transition: "all 0.12s",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Chart — taller, more breathing room */}
+      <ResponsiveContainer width="100%" height={380}>
+        <LineChart data={data} margin={{ top: 8, right: 20, bottom: 8, left: 0 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+          <XAxis
+            dataKey="year"
+            {...AX}
+            tick={{ fontFamily: MONO, fontSize: 11, fill: INK300 }}
+            tickMargin={8}
+          />
+          <YAxis
+            domain={[0, "auto"]}
+            {...AX}
+            tick={{ fontFamily: MONO, fontSize: 11, fill: INK300 }}
+            width={32}
+          />
+          <Tooltip
+            content={<Tip fmt={(v: number) => v?.toFixed(2)} />}
+          />
+          {/* No recharts Legend — we use pills above */}
+          {visibleParams.map(k => {
+            const key   = PARAM_SHORT[k] ?? k;
+            const color = paramColor[key];
+            return (
+              <Line
+                key={k}
+                type="monotone"
+                dataKey={key}
+                name={PARAM_FULL[key] ?? key}
+                stroke={color}
+                strokeWidth={2}
+                dot={{ r: 4, strokeWidth: 0, fill: color }}
+                activeDot={{ r: 6, stroke: color, strokeWidth: 2, fill: "#fff" }}
+                connectNulls
+              />
+            );
+          })}
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. INTAKE — one line per program over academic years + program selector
+// ─────────────────────────────────────────────────────────────────────────────
+export function IntakeTrendChart({ metrics }: { metrics: RawMetric[] }) {
+  const valid = metrics.filter(m => isRealYear(m.year) && !isBAD(m.value) && !isBAD(m.program));
+  if (!valid.length) return null;
+
+  const yearSet = new Set<string>();
+  const map = new Map<string, Map<string, number>>(); // program → year → total
+
+  for (const m of valid) {
+    const yr   = baseYear(m.year);
+    const prog = m.program.trim();
+    const val  = toNum(m.value);
+    if (!val || val <= 0) continue;
+    yearSet.add(yr);
+    if (!map.has(prog)) map.set(prog, new Map());
+    map.get(prog)!.set(yr, (map.get(prog)!.get(yr) ?? 0) + val);
+  }
+
+  const years = sortYrs(Array.from(yearSet));
+  const progs = Array.from(map.keys()).sort();
+  if (years.length < 2 || !progs.length) return null;
+
+  // Colour index stable per prog (not per filtered subset)
+  const progColor = Object.fromEntries(progs.map((p, i) => [p, PALETTE[i % PALETTE.length]]));
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [selectedProg, setSelectedProg] = useState(ALL_PROG);
+
+  // Which programs are visible
+  const visibleProgs = selectedProg === ALL_PROG
+    ? progs.filter(p => {
+        const data = years.map(yr => map.get(p)!.get(yr) ?? null);
+        return data.filter(v => v != null).length >= 2;
+      })
+    : progs.filter(p => p === selectedProg);
+
+  const data = years.map(yr => {
+    const pt: Record<string, any> = { year: yr };
+    for (const p of visibleProgs) {
+      const v = map.get(p)!.get(yr);
+      if (v != null) pt[shorten(p, 20)] = v;
+    }
+    return pt;
+  });
+
+  return (
+    <ChartCard title="Sanctioned Intake — Trend by Academic Year">
+      <ProgramSelector
+        programs={progs}
+        selected={selectedProg}
+        onChange={setSelectedProg}
+      />
+      <ResponsiveContainer width="100%" height={240}>
+        <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+          <XAxis dataKey="year" {...AX} />
+          <YAxis {...AX} />
+          <Tooltip content={<Tip />} />
+          <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+          {visibleProgs.map(p => (
+            <Line
+              key={p}
+              type="monotone"
+              dataKey={shorten(p, 20)}
+              stroke={progColor[p]}
+              strokeWidth={1.8}
+              dot={{ r: 3, strokeWidth: 0, fill: progColor[p] }}
+              activeDot={{ r: 5 }}
+              connectNulls
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. PLACEMENT — full trend covering all year types:
+//    • Graduation Year  → Placed, Graduated, Higher Studies, Median Salary
+//    • Intake Year      → Intake (sanctioned), Admitted
+//    • Lateral Entry    → Lateral Entry admissions
+//
+//    X-axis = base academic year (e.g. "2019-20")
+//    Salary on right Y-axis (₹ L), all counts on left
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. PLACEMENT — single chart with program selector pill
+//    Props:
+//      allMetrics — metrics from ALL programs across ALL ranking years
+//      programs   — ordered list of program names for the selector
+//
+//    X-axis = base academic year ("2016-17" … "2023-24")
+//    Salary dashed on right Y-axis (₹ L), counts on left
+//    Internal "View" selector switches Graduation / Intake metrics
+// ─────────────────────────────────────────────────────────────────────────────
+export function PlacementTrendChart({
+  allMetrics,
+  programs,
+}: {
+  allMetrics: RawMetric[];
+  programs: string[];        // all distinct programs in order
+}) {
+  const K_PLACED   = "Placed";
+  const K_HIGHER   = "Higher Studies";
+  const K_GRAD     = "Graduated";
+  const K_SALARY   = "Median Salary (L)";
+  const K_INTAKE   = "Intake (Sanctioned)";
+  const K_ADMITTED = "Admitted";
+  const K_LATERAL  = "Lateral Entry";
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [selectedProg, setSelectedProg] = useState(ALL_PROG);
+
+  // Filter to selected program
+  const metrics = selectedProg === ALL_PROG
+    ? allMetrics
+    : allMetrics.filter(m => m.program.trim() === selectedProg);
+
+  const yearSet = new Set<string>();
+  const mmap = new Map<string, Map<string, number>>();
+
+  const addVal = (key: string, yr: string, val: number) => {
+    yearSet.add(yr);
+    if (!mmap.has(key)) mmap.set(key, new Map());
+    const prev = mmap.get(key)!.get(yr) ?? 0;
+    mmap.get(key)!.set(yr, Math.max(prev, val));
+  };
+
+  for (const m of metrics) {
+    if (isBAD(m.value) || isBAD(m.year)) continue;
+    const val = toNum(m.value);
+    if (val === null || val < 0) continue;
+    const yr  = baseYear(m.year);
+    if (!yr) continue;
+    const ml  = m.year.toLowerCase();
+    const met = m.metric.toLowerCase();
+
+    if (ml.includes("graduation")) {
+      if (met.includes("students placed"))                                          addVal(K_PLACED,   yr, val);
+      else if (met.includes("higher stud") || met.includes("selected for higher")) addVal(K_HIGHER,   yr, val);
+      else if (met.includes("graduating in minimum"))                               addVal(K_GRAD,     yr, val);
+      else if (met.includes("salary") || met.includes("median"))                   addVal(K_SALARY,   yr, +(val / 100_000).toFixed(2));
+    } else if (ml.includes("intake year")) {
+      if (met.includes("intake in the year") || met.includes("sanctioned intake")) addVal(K_INTAKE,   yr, val);
+      else if (met.includes("admitted in the year"))                               addVal(K_ADMITTED, yr, val);
+    } else if (ml.includes("lateral entry")) {
+      if (met.includes("lateral entry") || met.includes("admitted through lateral")) addVal(K_LATERAL, yr, val);
+    }
+  }
+
+  const years = sortYrs(Array.from(yearSet));
+  if (years.length < 2) return null;
+
+  // Determine available view groups from actual data
+  const gradKeys   = [K_PLACED, K_GRAD, K_HIGHER].filter(k => mmap.has(k));
+  const intakeKeys = [K_INTAKE, K_ADMITTED, K_LATERAL].filter(k => mmap.has(k));
+  const hasSalary  = mmap.has(K_SALARY);
+
+  const GROUPS: string[] = [];
+  if (gradKeys.length)   GROUPS.push("Graduation");
+  if (intakeKeys.length) GROUPS.push("Intake");
+  if (GROUPS.length > 1) GROUPS.unshift("All");
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [group, setGroup] = useState(GROUPS[0] ?? "All");
+  const activeGroup = GROUPS.includes(group) ? group : (GROUPS[0] ?? "All");
+
+  const visibleCountKeys = (() => {
+    if (activeGroup === "Graduation") return gradKeys;
+    if (activeGroup === "Intake")     return intakeKeys;
+    return [...gradKeys, ...intakeKeys];
+  })().filter(k => {
+    const pts = years.map(yr => mmap.get(k)?.get(yr) ?? null);
+    return pts.filter(v => v != null).length >= 2;
+  });
+
+  const showSalary = hasSalary &&
+    (activeGroup === "All" || activeGroup === "Graduation") &&
+    years.filter(yr => mmap.get(K_SALARY)?.get(yr) != null).length >= 2;
+
+  if (!visibleCountKeys.length && !showSalary) return null;
+
+  const data = years.map(yr => {
+    const pt: Record<string, any> = { year: yr };
+    for (const k of visibleCountKeys) {
+      const v = mmap.get(k)?.get(yr); if (v != null) pt[k] = v;
+    }
+    if (showSalary) { const v = mmap.get(K_SALARY)?.get(yr); if (v != null) pt[K_SALARY] = v; }
+    return pt;
+  });
+
+  const KC: Record<string, string> = {
+    [K_PLACED]:   PALETTE[0],
+    [K_GRAD]:     PALETTE[2],
+    [K_HIGHER]:   PALETTE[1],
+    [K_SALARY]:   PALETTE[3],
+    [K_INTAKE]:   PALETTE[4],
+    [K_ADMITTED]: PALETTE[5],
+    [K_LATERAL]:  PALETTE[6],
+  };
+
+  const fmtTip = (v: number, name: string) =>
+    name === K_SALARY ? `₹${v}L` : v?.toLocaleString("en-IN");
+
+  return (
+    <ChartCard title="Placement Trend">
+      {/* Row 1 — Program selector */}
+      <ProgramSelector
+        programs={programs}
+        selected={selectedProg}
+        onChange={setSelectedProg}
+      />
+
+      {/* Row 2 — View selector (Graduation / Intake) */}
+      {GROUPS.length > 1 && (
+        <div style={{
+          display: "flex", gap: 6, flexWrap: "wrap",
+          marginBottom: 14, paddingBottom: 12,
+          borderBottom: `1px solid ${BORDER}`,
+        }}>
+          <span style={{
+            fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
+            letterSpacing: "0.08em", color: INK300,
+            alignSelf: "center", marginRight: 4,
+          }}>
+            View
+          </span>
+          {GROUPS.map(g => {
+            const active = g === activeGroup;
+            return (
+              <button key={g} onClick={() => setGroup(g)} style={{
+                fontFamily: MONO, fontSize: "0.65rem", padding: "3px 10px",
+                border: `1px solid ${active ? CRIMSON : BORDER}`,
+                background: active ? CRIMSON : "var(--white)",
+                color: active ? "#fff" : INK300,
+                cursor: "pointer", borderRadius: 2, transition: "all 0.12s",
+              }}>
+                {g}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={data} margin={{ top: 4, right: showSalary ? 56 : 16, bottom: 0, left: -10 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+          <XAxis dataKey="year" {...AX} />
+          <YAxis yAxisId="left" {...AX} />
+          {showSalary && (
+            <YAxis yAxisId="right" orientation="right"
+              tickFormatter={v => `₹${v}L`} axisLine={false} tickLine={false}
+              tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_SALARY] }} />
+          )}
+          <Tooltip content={<Tip fmt={fmtTip} />} />
+          <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+          {visibleCountKeys.map(k => (
+            <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+              stroke={KC[k]} strokeWidth={1.8}
+              dot={{ r: 3, strokeWidth: 0, fill: KC[k] }}
+              activeDot={{ r: 5 }} connectNulls />
+          ))}
+          {showSalary && (
+            <Line yAxisId="right" type="monotone" dataKey={K_SALARY}
+              stroke={KC[K_SALARY]} strokeWidth={1.8} strokeDasharray="5 3"
+              dot={{ r: 3, strokeWidth: 0, fill: KC[K_SALARY] }}
+              activeDot={{ r: 5 }} connectNulls />
+          )}
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. FINANCIAL — one line per line item over academic years (₹ Cr)
+// ─────────────────────────────────────────────────────────────────────────────
+export function FinancialTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+  const valid = metrics.filter(m =>
+    !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") &&
+    !isBAD(m.program) && isRealYear(m.year)
+  );
+  if (!valid.length) return null;
+
+  const yearSet = new Set<string>();
+  const lineMap = new Map<string, Map<string, number>>();
+
+  for (const m of valid) {
+    const yr = baseYear(m.year);
+    const prog = m.program.trim();
+    const val = toNum(m.value);
+    if (!val || val <= 0) continue;
+    yearSet.add(yr);
+    if (!lineMap.has(prog)) lineMap.set(prog, new Map());
+    lineMap.get(prog)!.set(yr, +(val / 1e7).toFixed(2));
+  }
+
+  const years = sortYrs(Array.from(yearSet));
+  const lines = Array.from(lineMap.keys()).sort();
+  if (years.length < 2 || !lines.length) return null;
+
+  const data = years.map(yr => {
+    const pt: Record<string, any> = { year: yr };
+    for (const l of lines) { const v = lineMap.get(l)!.get(yr); if (v != null) pt[shorten(l, 22)] = v; }
+    return pt;
+  });
+
+  const active = lines.filter(l => data.filter(d => d[shorten(l, 22)] != null).length >= 2);
+  if (!active.length) return null;
+
+  return (
+    <ChartCard title={`${title} — Trend by Year (₹ Crore)`}>
+      <ResponsiveContainer width="100%" height={Math.min(280, 140 + active.length * 20)}>
+        <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -4 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+          <XAxis dataKey="year" {...AX} />
+          <YAxis tickFormatter={v => `₹${v}Cr`} {...AX} />
+          <Tooltip content={<Tip fmt={(v: number) => `₹${v} Cr`} />} />
+          <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+          {active.map((l, i) => (
+            <Line key={l} type="monotone" dataKey={shorten(l, 22)}
+              stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.8}
+              dot={{ r: 3, strokeWidth: 0, fill: PALETTE[i % PALETTE.length] }}
+              activeDot={{ r: 5 }} connectNulls />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. RESEARCH — projects / agencies / amount over academic years
+//    Amount on right axis (₹ Cr), counts on left
+// ─────────────────────────────────────────────────────────────────────────────
+export function ResearchTrendChart({ metrics, title }: { metrics: RawMetric[]; title: string }) {
+  const valid = metrics.filter(m =>
+    !isBAD(m.value) && !m.metric.toLowerCase().includes("in words") && isRealYear(m.year)
+  );
+  if (!valid.length) return null;
+
+  const K_PROJ  = "Projects / Programs";
+  const K_AGENCY = "Funding Agencies";
+  const K_AMT   = "Amount (Cr)";
+  const K_PART  = "Participants";
+
+  const yearSet = new Set<string>();
+  const mmap = new Map<string, Map<string, number>>();
+
+  for (const m of valid) {
+    const yr = baseYear(m.year);
+    const val = toNum(m.value);
+    if (val === null || val < 0) continue;
+    yearSet.add(yr);
+    const ml = m.metric.toLowerCase();
+    let key: string | null = null;
+    if (ml.includes("no. of") && (ml.includes("project") || ml.includes("program")))   key = K_PROJ;
+    else if (ml.includes("total no.") && ml.includes("project"))                        key = K_PROJ;
+    else if (ml.includes("number of projects") || ml.includes("number of programs"))    key = K_PROJ;
+    else if (ml.includes("funding agenc") || ml.includes("no. of agenc"))               key = K_AGENCY;
+    else if (ml.includes("participants"))                                                key = K_PART;
+    else if (ml.includes("amount") && !ml.includes("words"))                            key = K_AMT;
+    if (!key) continue;
+    const mapped = key === K_AMT ? +(val / 1e7).toFixed(2) : val;
+    if (!mmap.has(key)) mmap.set(key, new Map());
+    mmap.get(key)!.set(yr, (mmap.get(key)!.get(yr) ?? 0) + mapped);
+  }
+
+  const years = sortYrs(Array.from(yearSet));
+  if (years.length < 2 || !mmap.size) return null;
+
+  const data = years.map(yr => {
+    const pt: Record<string, any> = { year: yr };
+    for (const [k, ym] of mmap) { const v = ym.get(yr); if (v != null) pt[k] = v; }
+    return pt;
+  });
+
+  const countKeys = [K_PROJ, K_AGENCY, K_PART].filter(k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2);
+  const hasAmt    = mmap.has(K_AMT) && data.filter(d => d[K_AMT] != null).length >= 2;
+  if (!countKeys.length && !hasAmt) return null;
+
+  const KC: Record<string, string> = { [K_PROJ]: PALETTE[0], [K_AGENCY]: PALETTE[1], [K_PART]: PALETTE[2], [K_AMT]: PALETTE[3] };
+
+  return (
+    <ChartCard title={`${title} — Trend by Year`}>
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={data} margin={{ top: 4, right: hasAmt ? 56 : 16, bottom: 0, left: -10 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+          <XAxis dataKey="year" {...AX} />
+          <YAxis yAxisId="left" {...AX} />
+          {hasAmt && (
+            <YAxis yAxisId="right" orientation="right"
+              tickFormatter={v => `₹${v}Cr`} axisLine={false} tickLine={false}
+              tick={{ fontFamily: MONO, fontSize: 10, fill: KC[K_AMT] }} />
+          )}
+          <Tooltip content={<Tip fmt={(v: number, name: string) => name === K_AMT ? `₹${v} Cr` : v?.toLocaleString("en-IN")} />} />
+          <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+          {countKeys.map(k => (
+            <Line key={k} yAxisId="left" type="monotone" dataKey={k}
+              stroke={KC[k]} strokeWidth={1.8}
+              dot={{ r: 3, strokeWidth: 0, fill: KC[k] }} activeDot={{ r: 5 }} connectNulls />
+          ))}
+          {hasAmt && (
+            <Line yAxisId="right" type="monotone" dataKey={K_AMT}
+              stroke={KC[K_AMT]} strokeWidth={1.8} strokeDasharray="5 3"
+              dot={{ r: 3, strokeWidth: 0, fill: KC[K_AMT] }} activeDot={{ r: 5 }} connectNulls />
+          )}
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. PhD — graduated (Full Time + Part Time) over academic years
+//    Pulls from all ranking year submissions combined so the full
+//    2019-20 → 2023-24 run is visible in one chart.
+//
+//    Data shape:
+//      program = "No. of Ph.D students graduated..."
+//      year    = "2021-22", "2022-23", ...
+//      metric  = "Full Time Graduated" | "Part Time Graduated"
+// ─────────────────────────────────────────────────────────────────────────────
+export function PhdTrendChart({ metrics }: { metrics: RawMetric[] }) {
+  const K_FT = "Full Time Graduated";
+  const K_PT = "Part Time Graduated";
+
+  const yearSet = new Set<string>();
+  // key → year → value  (keep max across duplicate ranking-year submissions)
+  const mmap = new Map<string, Map<string, number>>();
+
+  const set = (key: string, yr: string, val: number) => {
+    yearSet.add(yr);
+    if (!mmap.has(key)) mmap.set(key, new Map());
+    const prev = mmap.get(key)!.get(yr) ?? 0;
+    mmap.get(key)!.set(yr, Math.max(prev, val));
+  };
+
+  for (const m of metrics) {
+    if (isBAD(m.value) || !isRealYear(m.year)) continue;
+    const val = toNum(m.value);
+    if (val === null || val < 0) continue;
+    const yr  = baseYear(m.year);
+    const met = m.metric.toLowerCase();
+    if (met.includes("full time"))       set(K_FT, yr, val);
+    else if (met.includes("part time"))  set(K_PT, yr, val);
+  }
+
+  const years = sortYrs(Array.from(yearSet));
+  if (years.length < 2) return null;
+
+  const data = years.map(yr => {
+    const pt: Record<string, any> = { year: yr };
+    for (const [k, ym] of mmap) {
+      const v = ym.get(yr);
+      if (v != null) pt[k] = v;
+    }
+    return pt;
+  });
+
+  const active = [K_FT, K_PT].filter(
+    k => mmap.has(k) && data.filter(d => d[k] != null).length >= 2,
+  );
+  if (!active.length) return null;
+
+  const KC: Record<string, string> = {
+    [K_FT]: PALETTE[2],  // purple
+    [K_PT]: PALETTE[1],  // teal
+  };
+
+  return (
+    <ChartCard title="PhD Graduated — Trend by Academic Year">
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+          <XAxis dataKey="year" {...AX} />
+          <YAxis {...AX} />
+          <Tooltip content={<Tip />} />
+          <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+          {active.map(k => (
+            <Line
+              key={k}
+              type="monotone"
+              dataKey={k}
+              stroke={KC[k]}
+              strokeWidth={1.8}
+              dot={{ r: 3, strokeWidth: 0, fill: KC[k] }}
+              activeDot={{ r: 5 }}
+              connectNulls
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. STUDENTS — all 12 metrics trend over ranking years
+//
+//    Students data has no academic year axis — snapshot per ranking year.
+//    X-axis = ranking_year (2020 … 2025).
+//    Values summed across all programs for institution-level totals.
+//
+//    Three charts:
+//      A — Composition : Total Students, Male, Female
+//      B — Diversity   : SC/ST/OBC, Within State, Outside State,
+//                        Outside Country, Econ. Backward
+//      C — Fee Status  : Reimbursed (Inst), Reimbursed (Govt),
+//                        Reimbursed (Private), Not Receiving
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface StudentRawMetric extends RawMetric { ranking_year: number; }
+
+type StudentChart = "composition" | "diversity" | "fee";
+
+const STUDENT_SERIES: Array<{ match: string[]; label: string; chart: StudentChart }> = [
+  // Composition — order: Female BEFORE Male to prevent "female students" matching "male students"
+  { match: ["total students"],                                             label: "Total Students",       chart: "composition" },
+  { match: ["no. of female", "of female students"],                       label: "Female",               chart: "composition" },
+  { match: ["no. of male", "of male students"],                           label: "Male",                 chart: "composition" },
+  // Diversity
+  { match: ["sc+st+obc", "socially challenged"],                          label: "SC/ST/OBC",            chart: "diversity"    },
+  { match: ["within state"],                                              label: "Within State",         chart: "diversity"    },
+  { match: ["outside state"],                                             label: "Outside State",        chart: "diversity"    },
+  { match: ["outside country"],                                           label: "Outside Country",      chart: "diversity"    },
+  { match: ["economically backward"],                                     label: "Econ. Backward",       chart: "diversity"    },
+  // Fee reimbursement — most specific first
+  { match: ["institution funds", "from institution"],                     label: "Reimb. (Institution)", chart: "fee"          },
+  { match: ["private bod", "from private"],                               label: "Reimb. (Private)",     chart: "fee"          },
+  { match: ["state and central", "central government", "from the state"], label: "Reimb. (Govt)",        chart: "fee"          },
+  { match: ["not receiving full tuition", "not receiving"],               label: "Not Reimbursed",       chart: "fee"          },
+];
+
+function matchStudentSeries(metric: string): { label: string; chart: StudentChart } | null {
+  const ml = metric.toLowerCase();
+  for (const s of STUDENT_SERIES) {
+    if (s.match.some(kw => ml.includes(kw))) return { label: s.label, chart: s.chart };
+  }
+  return null;
+}
+
+const STUDENT_COLORS: Record<string, string> = {
+  // Composition
+  "Total Students":       PALETTE[4],   // blue
+  "Male":                 PALETTE[0],   // crimson
+  "Female":               PALETTE[1],   // teal
+  // Diversity
+  "SC/ST/OBC":            PALETTE[2],   // purple
+  "Within State":         PALETTE[4],   // blue
+  "Outside State":        PALETTE[3],   // amber
+  "Outside Country":      PALETTE[5],   // green
+  "Econ. Backward":       PALETTE[6],   // orange
+  // Fee
+  "Reimb. (Institution)": PALETTE[1],   // teal
+  "Reimb. (Private)":     PALETTE[5],   // green
+  "Reimb. (Govt)":        PALETTE[2],   // purple
+  "Not Reimbursed":       PALETTE[0],   // crimson
+};
+
+export function StudentsTrendChart({ metrics }: { metrics: StudentRawMetric[] }) {
+  // Collect all distinct programs
+  const progSet = new Set<string>();
+  for (const m of metrics) {
+    if (!isBAD(m.program) && m.program.trim() !== "-") progSet.add(m.program.trim());
+  }
+  const progs = Array.from(progSet).sort();
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [selectedProg, setSelectedProg] = useState(ALL_PROG);
+
+  // Filter metrics to selected program
+  const filtered = selectedProg === ALL_PROG
+    ? metrics
+    : metrics.filter(m => m.program.trim() === selectedProg);
+
+  // ranking_year → label → summed value
+  const yearMap = new Map<number, Map<string, number>>();
+  for (const m of filtered) {
+    if (isBAD(m.value) || !m.ranking_year) continue;
+    const val = toNum(m.value);
+    if (val === null || val < 0) continue;
+    const match = matchStudentSeries(m.metric);
+    if (!match) continue;
+    if (!yearMap.has(m.ranking_year)) yearMap.set(m.ranking_year, new Map());
+    const ym = yearMap.get(m.ranking_year)!;
+    ym.set(match.label, (ym.get(match.label) ?? 0) + val);
+  }
+
+  const years = Array.from(yearMap.keys()).sort((a, b) => a - b);
+  if (years.length < 2) return null;
+
+  const data = years.map(yr => {
+    const pt: Record<string, any> = { year: yr };
+    const ym = yearMap.get(yr)!;
+    for (const [label, val] of ym) pt[label] = val;
+    return pt;
+  });
+
+  // Series with ≥2 data points (≥1 when a specific program is selected to avoid blank charts)
+  const minPoints = selectedProg === ALL_PROG ? 2 : 1;
+  const activeSeries = (chart: StudentChart) =>
+    STUDENT_SERIES
+      .filter(s => s.chart === chart)
+      .map(s => s.label)
+      .filter(l => data.filter(d => d[l] != null).length >= minPoints);
+
+  const compSeries = activeSeries("composition");
+  const divSeries  = activeSeries("diversity");
+  const feeSeries  = activeSeries("fee");
+
+  if (!compSeries.length && !divSeries.length && !feeSeries.length) return null;
+
+  // Inline chart renderer — takes series labels, renders a full chart card
+  // selector is rendered fresh inside each card so React doesn't share instances
+  const renderChart = (title: string, series: string[]) => {
+    if (!series.length) return null;
+    return (
+      <ChartCard title={title}>
+        <ProgramSelector
+          programs={progs}
+          selected={selectedProg}
+          onChange={setSelectedProg}
+        />
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -10 }}>
+            <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false} />
+            <XAxis dataKey="year" {...AX} />
+            <YAxis {...AX} />
+            <Tooltip content={<Tip />} />
+            <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem", paddingTop: 10 }} />
+            {series.map(k => (
+              <Line
+                key={k}
+                type="monotone"
+                dataKey={k}
+                stroke={STUDENT_COLORS[k] ?? PALETTE[0]}
+                strokeWidth={1.8}
+                dot={{ r: 3, strokeWidth: 0, fill: STUDENT_COLORS[k] ?? PALETTE[0] }}
+                activeDot={{ r: 5 }}
+                connectNulls
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
+    );
+  };
+
+  return (
+    <>
+      {renderChart("Student Composition — Trend by Ranking Year",  compSeries)}
+      {renderChart("Student Diversity — Trend by Ranking Year",    divSeries)}
+      {renderChart("Fee Reimbursement — Trend by Ranking Year",    feeSeries)}
+    </>
+  );
+}
