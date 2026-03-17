@@ -9,6 +9,9 @@
     "start": "next start",
     "lint": "eslint"
   },
+  "optionalDependencies": {
+    "duckdb": "*"
+  },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
     "axios": "^1.13.5",
