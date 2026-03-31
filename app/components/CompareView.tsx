@@ -3341,16 +3341,15 @@
 
 
 
-
-
 "use client";
 /**
- * CompareView.tsx  (v3 — full rebuild)
+ * CompareView.tsx  (v5 — per-institute category selectors)
  * ─────────────────────────────────────────────────────────────────────────────
- * 1. NIRF Score chart — every score column as toggle pill, multi-line per institute
- * 2. Section charts — tabs for every section (Intake, Placement, PhD, Students,
- *    Research, Financial…) each with their own metric toggle pills
- * 3. Comparison table — every metric, best value highlighted ★
+ * Each institute has its OWN category selector — you can compare
+ * IIT Madras (Engineering) vs IIT Bombay (Overall) side-by-side.
+ *
+ * The category selector lives prominently inside the comparison view,
+ * shown as a styled selector card directly under each institute's header column.
  */
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -3376,7 +3375,7 @@ interface InstituteProfile {
   institute_code: string;
   institute_name: string;
   categories: string[];
-  scoresByYear: Record<number, Record<string, unknown>>;
+  scoresByYear: Record<string, Record<string, unknown>>;
   rawSections: { section: string; metrics: RawMetric[] }[];
 }
 
@@ -3396,8 +3395,6 @@ const METRIC_PALETTE = [
   "#c0392b","#1a7a6e","#7d4fa8","#b5651d","#1d6fa8","#5a8a3a",
   "#c0762b","#2e6da4","#8a5a2e","#3a8a5a","#6d2eb5","#b52e6d",
 ];
-
-// ── All NIRF score parameters ─────────────────────────────────────────────────
 
 const ALL_SCORE_PARAMS: { key: string; label: string; short: string; color: string }[] = [
   { key: "img_ss_score",      label: "Student Strength",       short: "SS",    color: "#1a7a6e" },
@@ -3419,26 +3416,19 @@ const ALL_SCORE_PARAMS: { key: string; label: string; short: string; color: stri
   { key: "img_pr_score",      label: "Perception (PR)",        short: "PR",    color: "#b52e6d" },
 ];
 
-// ── Section tab definitions ───────────────────────────────────────────────────
-
-// Section tab config — kw is matched against section name (case-insensitive)
-// excludeKw: if set, section name must NOT contain this (prevents cross-contamination)
-const SECTION_TABS: { id: string; label: string; kw: string; excludeKw?: string; isAmt: boolean; useRankingYear: boolean }[] = [
+const SECTION_TABS: {
+  id: string; label: string; kw: string;
+  excludeKw?: string; isAmt: boolean; useRankingYear: boolean
+}[] = [
   { id: "intake",       label: "Intake",        kw: "Sanctioned",         isAmt: false, useRankingYear: false },
   { id: "placement",    label: "Placement",     kw: "Placement",          isAmt: false, useRankingYear: false },
-  { id: "students",     label: "Students",      kw: "Student",            excludeKw: "Ph.D", isAmt: false, useRankingYear: true  },
+  { id: "students",     label: "Students",      kw: "Student", excludeKw: "Ph.D", isAmt: false, useRankingYear: true },
   { id: "phd",          label: "PhD",           kw: "Ph.D",               isAmt: false, useRankingYear: false },
   { id: "research",     label: "Research",      kw: "Sponsored Research", isAmt: false, useRankingYear: false },
   { id: "consultancy",  label: "Consultancy",   kw: "Consultancy",        isAmt: true,  useRankingYear: false },
   { id: "financial",    label: "Financial",     kw: "expenditure",        isAmt: true,  useRankingYear: false },
-  { id: "patents",      label: "Patents/IPR",   kw: "Patent",             isAmt: false, useRankingYear: false },
   { id: "faculty",      label: "Faculty",       kw: "Faculty",            isAmt: false, useRankingYear: true  },
-  { id: "innovation",   label: "Innovation",    kw: "Startup",            isAmt: false, useRankingYear: false },
   { id: "publications", label: "Publications",  kw: "Publication",        isAmt: false, useRankingYear: false },
-  { id: "edp",          label: "EDP/MDP",       kw: "Executive",          isAmt: false, useRankingYear: false },
-  { id: "scholarship",  label: "Scholarships",  kw: "Scholarship",        isAmt: false, useRankingYear: false },
-  { id: "graduation",   label: "Graduation",    kw: "Graduation Outcome", isAmt: false, useRankingYear: false },
-  { id: "facilities",   label: "Facilities",    kw: "Facilities",         isAmt: false, useRankingYear: true  },
 ];
 
 // ── CSS constants ─────────────────────────────────────────────────────────────
@@ -3497,10 +3487,112 @@ function sortYrs(years: string[]): string[] {
   });
 }
 
-const shortName = (p: InstituteProfile | undefined, code: string, words = 3) =>
-  p?.institute_name?.split(" ").slice(0, words).join(" ") ?? code;
+// ── Row resolver — picks the right score row for a given code + year + category ──
 
-// ── UI primitives ─────────────────────────────────────────────────────────────
+function resolveRow(
+  profile: InstituteProfile | undefined,
+  year: number,
+  category: string,
+): Record<string, unknown> | null {
+  if (!profile) return null;
+  const sby = profile.scoresByYear;
+  if (category) {
+    const catKey = `${year}::${category}`;
+    if (sby[catKey]) return sby[catKey];
+  }
+  return sby[String(year)] ?? null;
+}
+
+// ── Per-institute category selector ──────────────────────────────────────────
+
+function InstCategorySelector({
+  profile,
+  activeCategory,
+  onChange,
+  color,
+}: {
+  profile: InstituteProfile;
+  activeCategory: string;
+  onChange: (cat: string) => void;
+  color: string;
+}) {
+  const cats = profile.categories;
+  if (!cats || cats.length <= 1) {
+    // Only one category — show it as a static badge, no selector needed
+    return (
+      <div style={{
+        marginTop: 6,
+        padding: "4px 10px",
+        background: `${color}12`,
+        border: `1px solid ${color}40`,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+      }}>
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+        <span style={{
+          fontFamily: MONO, fontSize: "0.6rem",
+          textTransform: "uppercase", letterSpacing: "0.07em",
+          color: color, fontWeight: 600,
+        }}>
+          {cats[0] ?? "—"}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <p style={{
+        fontFamily: MONO, fontSize: "0.55rem",
+        textTransform: "uppercase", letterSpacing: "0.09em",
+        color: INK300, marginBottom: 5,
+      }}>
+        Category
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+        {cats.map(cat => {
+          const isActive = cat === activeCategory;
+          return (
+            <button
+              key={cat}
+              onClick={() => onChange(cat)}
+              style={{
+                fontFamily: MONO,
+                fontSize: "0.62rem",
+                padding: "4px 10px",
+                background: isActive ? color : "transparent",
+                color: isActive ? WHITE : color,
+                border: `1.5px solid ${color}`,
+                cursor: "pointer",
+                letterSpacing: "0.05em",
+                transition: "all 0.12s",
+                fontWeight: isActive ? 700 : 400,
+                opacity: isActive ? 1 : 0.65,
+              }}
+              onMouseEnter={e => {
+                if (!isActive) {
+                  e.currentTarget.style.opacity = "1";
+                  e.currentTarget.style.background = `${color}18`;
+                }
+              }}
+              onMouseLeave={e => {
+                if (!isActive) {
+                  e.currentTarget.style.opacity = "0.65";
+                  e.currentTarget.style.background = "transparent";
+                }
+              }}
+            >
+              {cat}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── UI Primitives ─────────────────────────────────────────────────────────────
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -3518,58 +3610,6 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
       }}>
         {children}
       </p>
-    </div>
-  );
-}
-
-function PillBar({
-  pills, active, onToggle, onAll,
-}: {
-  pills: { key: string; label: string; color?: string }[];
-  active: Set<string>;
-  onToggle: (k: string) => void;
-  onAll: () => void;
-}) {
-  const allOn = pills.every(p => active.has(p.key));
-  return (
-    <div style={{
-      display: "flex", flexWrap: "wrap", gap: 5,
-      padding: "10px 24px 8px",
-      borderBottom: `1px solid ${BORDER}`,
-      background: OFF_WHITE,
-    }}>
-      <span style={{
-        fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
-        letterSpacing: "0.08em", color: INK300,
-        alignSelf: "center", marginRight: 4, flexShrink: 0,
-      }}>
-        Parameters
-      </span>
-      <button onClick={onAll} style={{
-        fontFamily: MONO, fontSize: "0.6rem", padding: "3px 9px",
-        border: `1px solid ${allOn ? CRIMSON : BORDER}`,
-        background: allOn ? CRIMSON : WHITE,
-        color: allOn ? WHITE : INK300,
-        cursor: "pointer", borderRadius: 2, transition: "all 0.12s",
-      }}>
-        All
-      </button>
-      {pills.map(p => {
-        const on  = active.has(p.key);
-        const col = p.color ?? CRIMSON;
-        return (
-          <button key={p.key} onClick={() => onToggle(p.key)} style={{
-            fontFamily: MONO, fontSize: "0.6rem", padding: "3px 9px",
-            border: `1px solid ${on ? col : BORDER}`,
-            background: on ? col : WHITE,
-            color: on ? WHITE : INK300,
-            cursor: "pointer", borderRadius: 2, transition: "all 0.12s",
-            whiteSpace: "nowrap",
-          }}>
-            {p.label}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -3594,22 +3634,139 @@ function ChartTip({ active: isActive, payload, label, fmtFn }: {
   );
 }
 
-const AX = { axisLine: false as const, tickLine: false as const, tick: { fontFamily: MONO, fontSize: 10, fill: INK300 } };
+const AX = {
+  axisLine: false as const, tickLine: false as const,
+  tick: { fontFamily: MONO, fontSize: 10, fill: INK300 },
+};
 
-// ── NIRF Score Chart ──────────────────────────────────────────────────────────
+function PillBar({ pills, active, onToggle, onAll }: {
+  pills: { key: string; label: string; color?: string }[];
+  active: Set<string>;
+  onToggle: (k: string) => void;
+  onAll: () => void;
+}) {
+  const allOn = pills.every(p => active.has(p.key));
+  return (
+    <div style={{
+      display: "flex", flexWrap: "wrap", gap: 5,
+      padding: "10px 24px 8px",
+      borderBottom: `1px solid ${BORDER}`,
+      background: OFF_WHITE,
+    }}>
+      <span style={{
+        fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase",
+        letterSpacing: "0.08em", color: INK300, alignSelf: "center", marginRight: 4,
+      }}>Parameters</span>
+      <button onClick={onAll} style={{
+        fontFamily: MONO, fontSize: "0.6rem", padding: "3px 9px",
+        border: `1px solid ${allOn ? CRIMSON : BORDER}`,
+        background: allOn ? CRIMSON : WHITE, color: allOn ? WHITE : INK300,
+        cursor: "pointer", borderRadius: 2,
+      }}>All</button>
+      {pills.map(p => {
+        const on = active.has(p.key); const col = p.color ?? CRIMSON;
+        return (
+          <button key={p.key} onClick={() => onToggle(p.key)} style={{
+            fontFamily: MONO, fontSize: "0.6rem", padding: "3px 9px",
+            border: `1px solid ${on ? col : BORDER}`,
+            background: on ? col : WHITE, color: on ? WHITE : INK300,
+            cursor: "pointer", borderRadius: 2, whiteSpace: "nowrap",
+          }}>{p.label}</button>
+        );
+      })}
+    </div>
+  );
+}
 
-function NIRFScoreChart({ profiles, codes, years, categoryFilter }: { profiles: CompareData; codes: string[]; years: number[]; categoryFilter?: string }) {
-  // Get score row for a code+year filtered by category using composite key
-  const getRow = (code: string, yr: number): Record<string, unknown> | undefined => {
-    const profile = profiles[code];
-    if (!profile) return undefined;
-    const sby = profile.scoresByYear as Record<string, Record<string, unknown>>;
-    if (categoryFilter) {
-      const catKey = `${yr}::${categoryFilter}`;
-      if (sby[catKey]) return sby[catKey];
-    }
-    return sby[String(yr)];
-  };
+// ── Table column header (shows per-institute category badge) ──────────────────
+
+function TableColHeader({
+  codes, profiles, instCategories,
+}: {
+  codes: string[];
+  profiles: CompareData;
+  instCategories: Record<string, string>;
+}) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: `200px repeat(${codes.length}, 1fr)`,
+      borderBottom: `2px solid ${BORDER}`,
+      background: OFF_WHITE,
+    }}>
+      <div style={{ padding: "8px 14px", borderRight: `1px solid ${BORDER}` }}>
+        <span style={{ fontFamily: MONO, fontSize: "0.6rem", color: INK300, textTransform: "uppercase", letterSpacing: "0.08em" }}>Metric</span>
+      </div>
+      {codes.map((code, i) => (
+        <div key={code} style={{
+          padding: "8px 14px", textAlign: "center",
+          borderRight: i < codes.length - 1 ? `1px solid ${BORDER}` : "none",
+        }}>
+          <span style={{ fontFamily: MONO, fontSize: "0.62rem", color: INST_COLORS[i], fontWeight: 600, display: "block" }}>
+            {profiles[code]?.institute_name?.split(" ").slice(0, 3).join(" ") ?? code}
+          </span>
+          {instCategories[code] && (
+            <span style={{
+              fontFamily: MONO, fontSize: "0.55rem",
+              color: INST_COLORS[i], opacity: 0.7,
+              textTransform: "uppercase", letterSpacing: "0.06em",
+            }}>
+              {instCategories[code]}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MetricRow({ label, values, bestI, fmt, subLabel }: {
+  label: string; values: (number | null)[]; bestI: number;
+  fmt?: (v: unknown) => string; subLabel?: string;
+}) {
+  const n = values.length; const fmtFn = fmt ?? fmtScore;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `200px repeat(${n}, 1fr)`, borderBottom: `1px solid ${BORDER}`, minHeight: 38 }}>
+      <div style={{ padding: "9px 14px", background: OFF_WHITE, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <span style={{ fontFamily: BODY, fontSize: "0.74rem", color: INK900 }}>{label}</span>
+        {subLabel && <span style={{ fontFamily: MONO, fontSize: "0.58rem", color: INK300 }}>{subLabel}</span>}
+      </div>
+      {values.map((v, i) => {
+        const isBest = i === bestI && v != null;
+        return (
+          <div key={i} style={{
+            padding: "9px 14px",
+            borderRight: i < n - 1 ? `1px solid ${BORDER}` : "none",
+            background: isBest ? CRIMSON_PALE : "transparent",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <span style={{
+              fontFamily: MONO, fontSize: "0.76rem",
+              fontWeight: isBest ? 700 : 400,
+              color: isBest ? CRIMSON : (v != null ? INK900 : INK300),
+            }}>
+              {v != null ? fmtFn(v) : "—"}
+              {isBest && v != null && <span style={{ marginLeft: 3, fontSize: "0.55rem" }}> ★</span>}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── NIRF Score Chart (per-institute category aware) ───────────────────────────
+
+function NIRFScoreChart({
+  profiles, codes, years, instCategories,
+}: {
+  profiles: CompareData;
+  codes: string[];
+  years: number[];
+  instCategories: Record<string, string>;
+}) {
+  const getRow = (code: string, yr: number) =>
+    resolveRow(profiles[code], yr, instCategories[code] ?? "");
 
   const available = ALL_SCORE_PARAMS.filter(p =>
     codes.some(c => years.some(y => toNum(getRow(c, y)?.[p.key]) != null))
@@ -3621,16 +3778,18 @@ function NIRFScoreChart({ profiles, codes, years, categoryFilter }: { profiles: 
 
   const toggle = (k: string) => setActive(prev => {
     const s = new Set(prev);
-    if (s.has(k)) { if (s.size > 1) s.delete(k); } else s.add(k);
+    s.has(k) ? (s.size > 1 && s.delete(k)) : s.add(k);
     return s;
   });
   const toggleAll = () => setActive(prev =>
-    prev.size === available.length ? new Set([available[0]?.key ?? ""]) : new Set(available.map(p => p.key))
+    prev.size === available.length
+      ? new Set([available[0]?.key ?? ""])
+      : new Set(available.map(p => p.key))
   );
 
   const activeParams = available.filter(p => active.has(p.key));
 
-  const chartData = years.slice().reverse().map(yr => {
+  const chartData = [...years].reverse().map(yr => {
     const pt: Record<string, unknown> = { year: yr };
     for (const code of codes) {
       for (const p of activeParams) {
@@ -3643,7 +3802,7 @@ function NIRFScoreChart({ profiles, codes, years, categoryFilter }: { profiles: 
 
   if (!available.length) return (
     <div style={{ padding: "20px 24px", color: INK300, fontFamily: MONO, fontSize: "0.75rem" }}>
-      No score data available.
+      No score data available for the selected categories.
     </div>
   );
 
@@ -3651,9 +3810,7 @@ function NIRFScoreChart({ profiles, codes, years, categoryFilter }: { profiles: 
     <>
       <PillBar
         pills={available.map(p => ({ key: p.key, label: p.label, color: p.color }))}
-        active={active}
-        onToggle={toggle}
-        onAll={toggleAll}
+        active={active} onToggle={toggle} onAll={toggleAll}
       />
       <div style={{ padding: "20px 24px 8px" }}>
         <ResponsiveContainer width="100%" height={360}>
@@ -3665,25 +3822,24 @@ function NIRFScoreChart({ profiles, codes, years, categoryFilter }: { profiles: 
             <Legend
               wrapperStyle={{ fontFamily: MONO, fontSize: "0.58rem", paddingTop: 10 }}
               formatter={(value: string) => {
-                const sep = value.indexOf("::");
-                const code = value.slice(0, sep);
+                const sep      = value.indexOf("::");
+                const code     = value.slice(0, sep);
                 const paramKey = value.slice(sep + 2);
-                const pLabel = ALL_SCORE_PARAMS.find(p => p.key === paramKey)?.short ?? paramKey;
-                const instFull = profiles[code]?.institute_name ?? code;
-                return `${instFull} · ${pLabel}`;
+                const pLabel   = ALL_SCORE_PARAMS.find(p => p.key === paramKey)?.short ?? paramKey;
+                const instName = profiles[code]?.institute_name ?? code;
+                const cat      = instCategories[code];
+                return `${instName}${cat ? ` (${cat})` : ""} · ${pLabel}`;
               }}
             />
             {codes.flatMap((code, ci) =>
               activeParams.map(p => {
-                const col   = ci === 0 ? p.color : INST_COLORS[ci];
-                const dash  = ci === 0 ? undefined : "6 3";
-                const dKey  = `${code}::${p.key}`;
-                const hasData = chartData.some(d => d[dKey] != null);
-                if (!hasData) return null;
+                const col  = ci === 0 ? p.color : INST_COLORS[ci];
+                const dash = ci === 0 ? undefined : "6 3";
+                const dKey = `${code}::${p.key}`;
+                if (!chartData.some(d => d[dKey] != null)) return null;
                 return (
                   <Line key={dKey} type="monotone" dataKey={dKey} name={dKey}
-                    stroke={col} strokeWidth={ci === 0 ? 2 : 1.8}
-                    strokeDasharray={dash}
+                    stroke={col} strokeWidth={ci === 0 ? 2 : 1.8} strokeDasharray={dash}
                     dot={{ r: 3, fill: col, strokeWidth: 0 }}
                     activeDot={{ r: 5 }} connectNulls
                   />
@@ -3697,18 +3853,19 @@ function NIRFScoreChart({ profiles, codes, years, categoryFilter }: { profiles: 
   );
 }
 
-// ── Radar ─────────────────────────────────────────────────────────────────────
+// ── Radar (per-institute category aware) ──────────────────────────────────────
 
-function ScoreRadar({ profiles, codes, year, categoryFilter }: { profiles: CompareData; codes: string[]; year: number; categoryFilter?: string }) {
-  const getRow = (code: string) => {
-    const profile = profiles[code]; if (!profile) return undefined;
-    const sby = profile.scoresByYear as Record<string, Record<string, unknown>>;
-    if (categoryFilter) {
-      const catKey = `${year}::${categoryFilter}`;
-      if (sby[catKey]) return sby[catKey];
-    }
-    return sby[String(year)];
-  };
+function ScoreRadar({
+  profiles, codes, year, instCategories,
+}: {
+  profiles: CompareData;
+  codes: string[];
+  year: number;
+  instCategories: Record<string, string>;
+}) {
+  const getRow = (code: string) =>
+    resolveRow(profiles[code], year, instCategories[code] ?? "");
+
   const params = ALL_SCORE_PARAMS.filter(p =>
     codes.some(c => toNum(getRow(c)?.[p.key]) != null)
   );
@@ -3735,15 +3892,17 @@ function ScoreRadar({ profiles, codes, year, categoryFilter }: { profiles: Compa
           <PolarGrid stroke={BORDER} />
           <PolarAngleAxis dataKey="param" tick={{ fontFamily: MONO, fontSize: 9, fill: INK500 }} />
           {codes.map((code, i) => (
-            <Radar key={code} name={shortName(profiles[code], code, 3)} dataKey={code}
+            <Radar key={code}
+              name={`${profiles[code]?.institute_name?.split(" ").slice(0, 2).join(" ") ?? code}${instCategories[code] ? ` (${instCategories[code]})` : ""}`}
+              dataKey={code}
               stroke={INST_COLORS[i]} fill={INST_COLORS[i]} fillOpacity={0.09} strokeWidth={2}
             />
           ))}
-          <Legend
-            wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem" }}
+          <Legend wrapperStyle={{ fontFamily: MONO, fontSize: "0.62rem" }}
             formatter={(_v, entry) => {
               const idx = codes.indexOf(String(entry.dataKey));
-              return <span style={{ color: INST_COLORS[idx] }}>{shortName(profiles[String(entry.dataKey)], String(entry.dataKey), 3)}</span>;
+              //@ts-ignore
+              return <span style={{ color: INST_COLORS[idx] }}>{String(entry.name)}</span>;
             }}
           />
         </RadarChart>
@@ -3752,9 +3911,8 @@ function ScoreRadar({ profiles, codes, year, categoryFilter }: { profiles: Compa
   );
 }
 
-// ── Section Chart — Program dropdown + Metric controls ───────────────────────
+// ── Section Chart ─────────────────────────────────────────────────────────────
 
-// Indexed data: code → program → metric → year → value
 type SectionIndex = Map<string, Map<string, Map<string, Map<string, number>>>>;
 
 function buildSectionIndex(
@@ -3763,7 +3921,7 @@ function buildSectionIndex(
   sectionKw: string,
   useRankingYear: boolean,
   excludeKw?: string,
-  categoryFilter?: string,
+  instCategories?: Record<string, string>,
 ): { index: SectionIndex; programs: string[]; metrics: string[]; years: string[] } {
   const BAD_PROG  = new Set(["", "-", "nan", "<na>", "null", "undefined", "none", "n/a"]);
   const progSet   = new Set<string>();
@@ -3772,6 +3930,7 @@ function buildSectionIndex(
   const index: SectionIndex = new Map();
 
   for (const code of codes) {
+    const catFilter = instCategories?.[code] ?? "";
     const codeMap: Map<string, Map<string, Map<string, number>>> = new Map();
     index.set(code, codeMap);
     const p = profiles[code]; if (!p) continue;
@@ -3781,7 +3940,7 @@ function buildSectionIndex(
       if (excludeKw && secLower.includes(excludeKw.toLowerCase())) continue;
       for (const m of sec.metrics) {
         if (isBAD(m.value) || m.metric.toLowerCase().includes("in words")) continue;
-        if (categoryFilter && m.category && m.category !== categoryFilter) continue;
+        if (catFilter && m.category && m.category !== catFilter) continue;
         const v = toNum(m.value);
         if (v == null || v < 0) continue;
         const yr = useRankingYear
@@ -3794,8 +3953,7 @@ function buildSectionIndex(
         if (!codeMap.has(prog)) codeMap.set(prog, new Map());
         const pm = codeMap.get(prog)!;
         if (!pm.has(metric)) pm.set(metric, new Map());
-        const mm = pm.get(metric)!;
-        mm.set(yr, Math.max(mm.get(yr) ?? 0, v));
+        pm.get(metric)!.set(yr, Math.max(pm.get(metric)!.get(yr) ?? 0, v));
       }
     }
   }
@@ -3814,19 +3972,20 @@ const SEL: React.CSSProperties = {
   border: `1px solid ${BORDER}`,
   padding: "6px 28px 6px 10px",
   cursor: "pointer", outline: "none",
-  appearance: "none" as const,
-  WebkitAppearance: "none" as const,
+  appearance: "none" as const, WebkitAppearance: "none" as const,
   minWidth: 160, maxWidth: 320, letterSpacing: "0.02em",
 };
 
 function SectionChart({
-  profiles, codes, sectionKw, excludeKw, isAmt, useRankingYear, categoryFilter,
+  profiles, codes, sectionKw, excludeKw, isAmt, useRankingYear, instCategories,
 }: {
   profiles: CompareData; codes: string[];
   sectionKw: string; excludeKw?: string; isAmt: boolean; useRankingYear: boolean;
-  categoryFilter?: string;
+  instCategories: Record<string, string>;
 }) {
-  const { index, programs, metrics, years } = buildSectionIndex(profiles, codes, sectionKw, useRankingYear, excludeKw, categoryFilter);
+  const { index, programs, metrics, years } = buildSectionIndex(
+    profiles, codes, sectionKw, useRankingYear, excludeKw, instCategories
+  );
 
   const [selProg,    setSelProg]    = useState<string>(() => programs[0] ?? "");
   const [selMetrics, setSelMetrics] = useState<Set<string>>(() => new Set(metrics.slice(0, 4)));
@@ -3835,12 +3994,12 @@ function SectionChart({
     setSelProg(programs[0] ?? "");
     setSelMetrics(new Set(metrics.slice(0, 4)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sectionKw, categoryFilter]);
+  }, [sectionKw, JSON.stringify(instCategories)]);
 
   if (!programs.length || !metrics.length || !years.length) {
     return (
       <div style={{ padding: "20px 24px", color: INK300, fontFamily: MONO, fontSize: "0.75rem" }}>
-        No data found for this section in the selected institutes.
+        No data found for this section with the current category selection.
       </div>
     );
   }
@@ -3851,7 +4010,7 @@ function SectionChart({
 
   const toggleMetric = (m: string) => setSelMetrics(prev => {
     const s = new Set(prev);
-    if (s.has(m)) { if (s.size > 1) s.delete(m); } else s.add(m);
+    s.has(m) ? (s.size > 1 && s.delete(m)) : s.add(m);
     return s;
   });
   const activeMetrics = metrics.filter(m => selMetrics.has(m));
@@ -3870,20 +4029,14 @@ function SectionChart({
 
   return (
     <>
-      {/* ── Controls ── */}
+      {/* Controls */}
       <div style={{
         display: "flex", alignItems: "flex-start", gap: 28, flexWrap: "wrap",
-        padding: "14px 24px 12px",
-        borderBottom: `1px solid ${BORDER}`,
-        background: OFF_WHITE,
+        padding: "14px 24px 12px", borderBottom: `1px solid ${BORDER}`, background: OFF_WHITE,
       }}>
-
-        {/* Program dropdown */}
         {hasPrograms && (
           <div style={{ flexShrink: 0 }}>
-            <label style={{ display: "block", fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase", letterSpacing: "0.08em", color: INK300, marginBottom: 5 }}>
-              Program
-            </label>
+            <label style={{ display: "block", fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase", letterSpacing: "0.08em", color: INK300, marginBottom: 5 }}>Program</label>
             <div style={{ position: "relative", display: "inline-block" }}>
               <select value={selProg} onChange={e => setSelProg(e.target.value)} style={SEL}>
                 {programs.map(p => <option key={p} value={p}>{p}</option>)}
@@ -3893,12 +4046,10 @@ function SectionChart({
           </div>
         )}
 
-        {/* Metrics — pill toggles when ≤10, chip+dropdown when >10 */}
         <div style={{ flex: 1, minWidth: 260 }}>
           <label style={{ display: "block", fontFamily: MONO, fontSize: "0.58rem", textTransform: "uppercase", letterSpacing: "0.08em", color: INK300, marginBottom: 5 }}>
             Metrics {useDropdown && <span style={{ color: CRIMSON }}>({selMetrics.size} selected)</span>}
           </label>
-
           {!useDropdown ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
               <button onClick={() => setSelMetrics(new Set(metrics))} style={{ fontFamily: MONO, fontSize: "0.6rem", padding: "3px 8px", border: `1px solid ${selMetrics.size === metrics.length ? CRIMSON : BORDER}`, background: selMetrics.size === metrics.length ? CRIMSON : WHITE, color: selMetrics.size === metrics.length ? WHITE : INK300, cursor: "pointer", borderRadius: 2 }}>
@@ -3908,14 +4059,13 @@ function SectionChart({
                 const on = selMetrics.has(m);
                 const col = METRIC_PALETTE[i % METRIC_PALETTE.length];
                 return (
-                  <button key={m} onClick={() => toggleMetric(m)} title={m} style={{ fontFamily: MONO, fontSize: "0.6rem", padding: "3px 9px", border: `1px solid ${on ? col : BORDER}`, background: on ? col : WHITE, color: on ? WHITE : INK300, cursor: "pointer", borderRadius: 2, whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <button key={m} onClick={() => toggleMetric(m)} title={m} style={{ fontFamily: MONO, fontSize: "0.6rem", padding: "3px 9px", border: `1px solid ${on ? col : BORDER}`, background: on ? col : WHITE, color: on ? WHITE : INK300, cursor: "pointer", borderRadius: 2, whiteSpace: "nowrap" }}>
                     {m.length > 32 ? m.slice(0, 30) + "…" : m}
                   </button>
                 );
               })}
             </div>
           ) : (
-            /* Many metrics → active chips + "Add metric" dropdown */
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
               {Array.from(selMetrics).map((m) => {
                 const col = METRIC_PALETTE[metrics.indexOf(m) % METRIC_PALETTE.length];
@@ -3925,7 +4075,7 @@ function SectionChart({
                     <span style={{ fontFamily: MONO, fontSize: "0.62rem", color: INK900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 190 }} title={m}>
                       {m.length > 28 ? m.slice(0, 26) + "…" : m}
                     </span>
-                    <button onClick={() => toggleMetric(m)} style={{ background: "none", border: "none", cursor: "pointer", color: INK300, fontSize: "0.65rem", padding: 0, flexShrink: 0, lineHeight: 1 }}>✕</button>
+                    <button onClick={() => toggleMetric(m)} style={{ background: "none", border: "none", cursor: "pointer", color: INK300, fontSize: "0.65rem", padding: 0 }}>✕</button>
                   </div>
                 );
               })}
@@ -3945,7 +4095,7 @@ function SectionChart({
         </div>
       </div>
 
-      {/* ── Chart ── */}
+      {/* Chart */}
       {!hasData ? (
         <div style={{ padding: "20px 24px", color: INK300, fontFamily: MONO, fontSize: "0.72rem" }}>
           No data for the selected program / metric combination.
@@ -3964,8 +4114,8 @@ function SectionChart({
                   const sep    = value.indexOf("::");
                   const code   = value.slice(0, sep);
                   const metric = value.slice(sep + 2);
-                  const instFull = profiles[code]?.institute_name ?? code;
-                  return `${instFull} · ${metric}`;
+                  const cat    = instCategories[code];
+                  return `${profiles[code]?.institute_name ?? code}${cat ? ` (${cat})` : ""} · ${metric}`;
                 }}
               />
               {codes.flatMap((code, ci) =>
@@ -3991,60 +4141,14 @@ function SectionChart({
   );
 }
 
-
-// ── Table primitives ──────────────────────────────────────────────────────────
-
-function TableColHeader({ codes, profiles }: { codes: string[]; profiles: CompareData }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: `200px repeat(${codes.length}, 1fr)`, borderBottom: `2px solid ${BORDER}`, background: OFF_WHITE }}>
-      <div style={{ padding: "8px 14px", borderRight: `1px solid ${BORDER}` }}>
-        <span style={{ fontFamily: MONO, fontSize: "0.6rem", color: INK300, textTransform: "uppercase", letterSpacing: "0.08em" }}>Metric</span>
-      </div>
-      {codes.map((code, i) => (
-        <div key={code} style={{ padding: "8px 14px", textAlign: "center", borderRight: i < codes.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-          <span style={{ fontFamily: MONO, fontSize: "0.62rem", color: INST_COLORS[i], fontWeight: 600 }}>
-            {profiles[code]?.institute_name?.split(" ").slice(0, 3).join(" ") ?? code}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MetricRow({ label, values, bestI, fmt, subLabel }: {
-  label: string; values: (number | null)[]; bestI: number;
-  fmt?: (v: unknown) => string; subLabel?: string;
-}) {
-  const n = values.length;
-  const fmtFn = fmt ?? fmtScore;
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: `200px repeat(${n}, 1fr)`, borderBottom: `1px solid ${BORDER}`, minHeight: 38 }}>
-      <div style={{ padding: "9px 14px", background: OFF_WHITE, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <span style={{ fontFamily: BODY, fontSize: "0.74rem", color: INK900 }}>{label}</span>
-        {subLabel && <span style={{ fontFamily: MONO, fontSize: "0.58rem", color: INK300 }}>{subLabel}</span>}
-      </div>
-      {values.map((v, i) => {
-        const isBest = i === bestI && v != null;
-        return (
-          <div key={i} style={{ padding: "9px 14px", borderRight: i < n - 1 ? `1px solid ${BORDER}` : "none", background: isBest ? CRIMSON_PALE : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontFamily: MONO, fontSize: "0.76rem", fontWeight: isBest ? 700 : 400, color: isBest ? CRIMSON : (v != null ? INK900 : INK300) }}>
-              {v != null ? fmtFn(v) : "—"}
-              {isBest && v != null && <span style={{ marginLeft: 3, fontSize: "0.55rem" }}> ★</span>}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Main ──────────────────────────────────────────────────────────────────────
+// ── Main CompareView ──────────────────────────────────────────────────────────
 
 export default function CompareView({ institutes, onRemove }: Props) {
-  const [data,         setData]         = useState<CompareData>({});
-  const [loading,      setLoading]      = useState(true);
+  const [data,           setData]           = useState<CompareData>({});
+  const [loading,        setLoading]        = useState(true);
   const [activeYear,     setActiveYear]     = useState<number | null>(null);
-  const [activeCategory, setActiveCategory] = useState<string>(""); // "" = no filter yet
+  // Per-institute category: code → selected category
+  const [instCategories, setInstCategories] = useState<Record<string, string>>({});
   const [activeSecTab,   setActiveSecTab]   = useState("intake");
 
   const codes = institutes.map(i => i.institute_code);
@@ -4056,27 +4160,29 @@ export default function CompareView({ institutes, onRemove }: Props) {
       .then(r => r.json())
       .then((d: CompareData) => {
         setData(d);
-        const yearSets = codes.map(c => new Set(Object.keys(d[c]?.scoresByYear ?? {}).map(Number)));
-        const common = Array.from(yearSets[0] ?? new Set<number>())
-          .filter(y => yearSets.every(s => s.has(y))).sort((a, b) => b - a);
-        const fallback = Array.from(
-          new Set(codes.flatMap(c => Object.keys(d[c]?.scoresByYear ?? {}).map(Number)))
-        ).sort((a, b) => b - a);
-        setActiveYear(common[0] ?? fallback[0] ?? null);
 
-        // Derive categories available across ALL loaded institutes
-        const catSets = codes.map(c =>
-          new Set((d[c]?.categories ?? []).map((s: string) => s))
-        );
-        // Common categories first, then union
-        const commonCats = Array.from(catSets[0] ?? new Set<string>())
-          .filter(cat => catSets.every(s => s.has(cat)))
-          .sort();
-        const allCats = Array.from(
-          new Set(codes.flatMap(c => d[c]?.categories ?? []))
-        ).sort();
-        const defaultCat = commonCats[0] ?? allCats[0] ?? "";
-        setActiveCategory(defaultCat);
+        // Default year — most recent year common to all, or fallback
+        const numericYears = (c: string) =>
+          Object.keys(d[c]?.scoresByYear ?? {})
+            .filter(k => !k.includes("::"))
+            .map(Number)
+            .filter(n => !isNaN(n));
+
+        const yearSets   = codes.map(c => new Set(numericYears(c)));
+        const common     = Array.from(yearSets[0] ?? new Set<number>())
+          .filter(y => yearSets.every(s => s.has(y))).sort((a, b) => b - a);
+        const allYearsFlat = Array.from(
+          new Set(codes.flatMap(c => numericYears(c)))
+        ).sort((a, b) => b - a);
+        setActiveYear(common[0] ?? allYearsFlat[0] ?? null);
+
+        // Default per-institute category — pick first available category for each
+        const defaults: Record<string, string> = {};
+        for (const code of codes) {
+          const cats = d[code]?.categories ?? [];
+          defaults[code] = cats[0] ?? "";
+        }
+        setInstCategories(defaults);
 
         setLoading(false);
       })
@@ -4084,7 +4190,11 @@ export default function CompareView({ institutes, onRemove }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codes.join(",")]);
 
-  // Only numeric year keys (filter out "year::category" composite keys)
+  const updateInstCategory = useCallback((code: string, cat: string) => {
+    setInstCategories(prev => ({ ...prev, [code]: cat }));
+  }, []);
+
+  // Numeric years only
   const allYears = Array.from(new Set(
     codes.flatMap(c =>
       Object.keys(data[c]?.scoresByYear ?? {})
@@ -4093,48 +4203,16 @@ export default function CompareView({ institutes, onRemove }: Props) {
         .filter(n => !isNaN(n))
     )
   )).sort((a, b) => b - a);
+
   const loadedCodes = codes.filter(c => !!data[c]);
 
-  // All categories across all loaded institutes
-  const allCategories = Array.from(new Set(
-    loadedCodes.flatMap(c => data[c]?.categories ?? [])
-  )).sort();
-  // Categories available in ALL institutes (common)
-  const commonCategories = allCategories.filter(cat =>
-    loadedCodes.every(c => (data[c]?.categories ?? []).includes(cat))
-  );
-
-  // Get the score row for a code filtered by activeCategory + activeYear
-  // API stores rows under both "year" and "year::category" keys
-  const getCatRow = useCallback((code: string): Record<string, unknown> | null => {
-    const profile = data[code];
-    if (!profile || !activeYear) return null;
-    const sby = profile.scoresByYear as Record<string, Record<string, unknown>>;
-    // Try category-qualified key first
-    if (activeCategory) {
-      const catKey = `${activeYear}::${activeCategory}`;
-      if (sby[catKey]) return sby[catKey];
-    }
-    // Fallback to plain year key
-    return sby[String(activeYear)] ?? null;
-  }, [data, activeYear, activeCategory]);
-
+  // Score row per-institute using their own category
   const scoreRow = useCallback((key: string) =>
-    loadedCodes.map(c => toNum(getCatRow(c)?.[key])),
-  [loadedCodes, getCatRow]);
-
-  // Raw sections filtered by activeCategory
-  const getFilteredSections = useCallback((code: string) => {
-    const profile = data[code];
-    if (!profile) return [];
-    if (!activeCategory) return profile.rawSections;
-    return profile.rawSections.map(sec => ({
-      ...sec,
-      metrics: sec.metrics.filter(m =>
-        !activeCategory || !m.category || m.category === activeCategory
-      ),
-    })).filter(sec => sec.metrics.length > 0);
-  }, [data, activeCategory]);
+    loadedCodes.map(c => {
+      const row = resolveRow(data[c], activeYear ?? 0, instCategories[c] ?? "");
+      return toNum(row?.[key]);
+    }),
+  [loadedCodes, data, activeYear, instCategories]);
 
   if (loading) {
     return (
@@ -4146,14 +4224,36 @@ export default function CompareView({ institutes, onRemove }: Props) {
 
   const activeSecDef = SECTION_TABS.find(t => t.id === activeSecTab) ?? SECTION_TABS[0];
 
+  // Summary label for section headers
+  const catSummary = loadedCodes
+    .map(c => instCategories[c])
+    .filter(Boolean)
+    .filter((v, i, a) => a.indexOf(v) === i) // unique
+    .join(" vs ");
+
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 0 100px" }}>
 
-      {/* ── Sticky header ── */}
-      <div style={{ position: "sticky", top: 52, zIndex: 40, background: WHITE, borderBottom: `2px solid ${BORDER}`, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: `180px repeat(${loadedCodes.length}, 1fr)` }}>
-          <div style={{ padding: "14px", borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", justifyContent: "center", gap: 8 }}>
-            <p style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: "0.85rem", color: CRIMSON }}>Comparison</p>
+      {/* ── Sticky institute header ── */}
+      <div style={{
+        position: "sticky",
+        top: 52,
+        zIndex: 40,
+        background: WHITE,
+        borderBottom: `2px solid ${BORDER}`,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+      }}>
+        <div style={{ display: "grid", gridTemplateColumns: `160px repeat(${loadedCodes.length}, 1fr)` }}>
+
+          {/* Corner cell — year selector */}
+          <div style={{
+            padding: "14px",
+            borderRight: `1px solid ${BORDER}`,
+            display: "flex", flexDirection: "column", justifyContent: "center", gap: 8,
+          }}>
+            <p style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: "0.85rem", color: CRIMSON }}>
+              Comparison
+            </p>
             {allYears.length > 1 && (
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                 {allYears.slice(0, 6).map(y => (
@@ -4168,67 +4268,55 @@ export default function CompareView({ institutes, onRemove }: Props) {
                 ))}
               </div>
             )}
-
-            {/* Category selector */}
-            {allCategories.length > 1 && (
-              <div>
-                <p style={{ fontFamily: MONO, fontSize: "0.55rem", textTransform: "uppercase", letterSpacing: "0.08em", color: INK300, marginBottom: 4 }}>
-                  Category
-                </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  {allCategories.map(cat => {
-                    const isCommon  = commonCategories.includes(cat);
-                    const isActive  = activeCategory === cat;
-                    return (
-                      <button key={cat} onClick={() => setActiveCategory(cat)} style={{
-                        fontFamily: MONO, fontSize: "0.58rem", padding: "3px 8px",
-                        border: `1px solid ${isActive ? CRIMSON : BORDER}`,
-                        background: isActive ? CRIMSON : "transparent",
-                        color: isActive ? WHITE : (isCommon ? INK900 : INK300),
-                        cursor: "pointer", textAlign: "left", whiteSpace: "nowrap",
-                        display: "flex", alignItems: "center", gap: 5,
-                      }}>
-                        {!isCommon && (
-                          <span style={{ fontSize: "0.5rem", color: isActive ? "rgba(255,255,255,0.6)" : INK300 }} title="Not available in all institutes">⚠</span>
-                        )}
-                        {cat}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
+
+          {/* Institute columns — each with its own category selector */}
           {loadedCodes.map((code, i) => {
-            const p     = data[code];
-            const score = activeYear ? toNum(p?.scoresByYear[activeYear]?.img_total) : null;
+            const p    = data[code];
+            const row  = resolveRow(p, activeYear ?? 0, instCategories[code] ?? "");
+            const score = toNum(row?.img_total);
+
             return (
-              <div key={code} style={{ padding: "12px 14px", borderRight: i < loadedCodes.length - 1 ? `1px solid ${BORDER}` : "none", borderTop: `3px solid ${INST_COLORS[i]}` }}>
+              <div key={code} style={{
+                padding: "12px 14px",
+                borderRight: i < loadedCodes.length - 1 ? `1px solid ${BORDER}` : "none",
+                borderTop: `3px solid ${INST_COLORS[i]}`,
+              }}>
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontFamily: BODY, fontWeight: 600, fontSize: "0.8rem", color: INK900, lineHeight: 1.3, marginBottom: 3 }}>{p?.institute_name ?? code}</p>
-                    <p style={{ fontFamily: MONO, fontSize: "0.6rem", color: INK300 }}>{code}</p>
-                    {/* Show active category if institute has it, else show warning */}
-                    {activeCategory ? (
-                      <span style={{
-                        display: "inline-block", marginTop: 4,
-                        fontFamily: MONO, fontSize: "0.55rem", textTransform: "uppercase", letterSpacing: "0.06em",
-                        color: (p?.categories ?? []).includes(activeCategory) ? INST_COLORS[i] : "#b0a090",
-                        border: `1px solid ${(p?.categories ?? []).includes(activeCategory) ? INST_COLORS[i] : BORDER}`,
-                        padding: "1px 5px",
-                        opacity: (p?.categories ?? []).includes(activeCategory) ? 1 : 0.6,
-                      }}>
-                        {(p?.categories ?? []).includes(activeCategory) ? activeCategory : `No ${activeCategory} data`}
-                      </span>
-                    ) : p?.categories?.[0] && (
-                      <span style={{ display: "inline-block", marginTop: 4, fontFamily: MONO, fontSize: "0.55rem", textTransform: "uppercase", letterSpacing: "0.06em", color: INST_COLORS[i], border: `1px solid ${INST_COLORS[i]}`, padding: "1px 5px" }}>
-                        {p.categories[0]}
-                      </span>
+                    <p style={{ fontFamily: BODY, fontWeight: 600, fontSize: "0.8rem", color: INK900, lineHeight: 1.3, marginBottom: 2 }}>
+                      {p?.institute_name ?? code}
+                    </p>
+                    <p style={{ fontFamily: MONO, fontSize: "0.6rem", color: INK300, marginBottom: 2 }}>
+                      {code}
+                    </p>
+
+                    {/* ── Per-institute category selector ── */}
+                    {p && (
+                      <InstCategorySelector
+                        profile={p}
+                        activeCategory={instCategories[code] ?? ""}
+                        onChange={cat => updateInstCategory(code, cat)}
+                        color={INST_COLORS[i]}
+                      />
                     )}
                   </div>
+
+                  {/* Score + remove */}
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    {score != null && <p style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: "1.5rem", color: INST_COLORS[i], lineHeight: 1 }}>{score.toFixed(2)}</p>}
-                    <button onClick={() => onRemove(code)} style={{ fontFamily: MONO, fontSize: "0.58rem", color: INK300, background: "none", border: `1px solid ${BORDER}`, padding: "2px 6px", cursor: "pointer", marginTop: 4 }}>✕</button>
+                    {score != null && (
+                      <p style={{
+                        fontFamily: SERIF, fontStyle: "italic",
+                        fontSize: "1.5rem", color: INST_COLORS[i], lineHeight: 1,
+                      }}>
+                        {score.toFixed(2)}
+                      </p>
+                    )}
+                    <button onClick={() => onRemove(code)} style={{
+                      fontFamily: MONO, fontSize: "0.58rem", color: INK300,
+                      background: "none", border: `1px solid ${BORDER}`,
+                      padding: "2px 6px", cursor: "pointer", marginTop: 4,
+                    }}>✕</button>
                   </div>
                 </div>
               </div>
@@ -4238,26 +4326,46 @@ export default function CompareView({ institutes, onRemove }: Props) {
       </div>
 
       {/* ═══════════════════ 1. NIRF SCORE CHART ═══════════════════ */}
-      <SectionHeader>NIRF Score Trends — All Parameters</SectionHeader>
-      <NIRFScoreChart profiles={data} codes={loadedCodes} years={allYears} categoryFilter={activeCategory} />
-      {activeYear && <ScoreRadar profiles={data} codes={loadedCodes} year={activeYear} categoryFilter={activeCategory} />}
+      <SectionHeader>
+        NIRF Score Trends{catSummary ? ` — ${catSummary}` : ""}
+      </SectionHeader>
+      <NIRFScoreChart
+        profiles={data} codes={loadedCodes}
+        years={allYears} instCategories={instCategories}
+      />
+      {activeYear && (
+        <ScoreRadar
+          profiles={data} codes={loadedCodes}
+          year={activeYear} instCategories={instCategories}
+        />
+      )}
 
       {/* ═══════════════════ 2. SCORE BREAKDOWN TABLE ═══════════════════ */}
-      <SectionHeader>NIRF Score Breakdown · {activeYear ?? "Latest Year"}</SectionHeader>
-      <TableColHeader codes={loadedCodes} profiles={data} />
-      {(() => { const vals = scoreRow("img_total"); return <MetricRow label="NIRF Total Score" values={vals} bestI={bestIdx(vals)} subLabel="/ 100" />; })()}
+      <SectionHeader>
+        NIRF Score Breakdown · {activeYear ?? "Latest Year"}
+      </SectionHeader>
+      <TableColHeader codes={loadedCodes} profiles={data} instCategories={instCategories} />
+      {(() => {
+        const vals = scoreRow("img_total");
+        return <MetricRow label="NIRF Total Score" values={vals} bestI={bestIdx(vals)} subLabel="/ 100" />;
+      })()}
       {ALL_SCORE_PARAMS.map(p => {
         const vals = scoreRow(p.key);
         if (vals.every(v => v == null)) return null;
-        const tvs = scoreRow(p.key.replace("_score", "_total"));
+        const tvs  = scoreRow(p.key.replace("_score", "_total"));
         const maxT = tvs.find(v => v != null);
-        return <MetricRow key={p.key} label={p.label} values={vals} bestI={bestIdx(vals)} subLabel={maxT ? `/ ${maxT.toFixed(0)}` : undefined} />;
+        return (
+          <MetricRow key={p.key} label={p.label} values={vals}
+            bestI={bestIdx(vals)}
+            subLabel={maxT ? `/ ${maxT.toFixed(0)}` : undefined}
+          />
+        );
       })}
 
       {/* ═══════════════════ 3. SECTION CHARTS ═══════════════════ */}
-      <SectionHeader>Section-wise Comparison — Charts</SectionHeader>
+      <SectionHeader>Section-wise Comparison</SectionHeader>
 
-      {/* Section tab strip */}
+      {/* Tab strip */}
       <div style={{ display: "flex", overflowX: "auto", borderBottom: `2px solid ${BORDER}`, background: WHITE }}>
         {SECTION_TABS.map(tab => (
           <button key={tab.id} onClick={() => setActiveSecTab(tab.id)} style={{
@@ -4275,45 +4383,48 @@ export default function CompareView({ institutes, onRemove }: Props) {
       </div>
 
       <SectionChart
-        key={`${activeSecTab}-${activeCategory}`}
+        key={`${activeSecTab}-${JSON.stringify(instCategories)}`}
         profiles={data}
         codes={loadedCodes}
         sectionKw={activeSecDef.kw}
         excludeKw={activeSecDef.excludeKw}
         isAmt={activeSecDef.isAmt}
         useRankingYear={activeSecDef.useRankingYear}
-        categoryFilter={activeCategory}
+        instCategories={instCategories}
       />
 
       {/* ═══════════════════ 4. KEY METRICS TABLE ═══════════════════ */}
-      <SectionHeader>Key Metrics Table · {activeYear ?? "Latest Year"}</SectionHeader>
-      <TableColHeader codes={loadedCodes} profiles={data} />
+      <SectionHeader>Key Metrics · {activeYear ?? "Latest Year"}</SectionHeader>
+      <TableColHeader codes={loadedCodes} profiles={data} instCategories={instCategories} />
       {[
-        { key: "pdf_total_intake",            label: "Total Intake",                   fmt: fmtN,   higher: false },
-        { key: "pdf_placement_placed",        label: "Students Placed",                fmt: fmtN,   higher: true  },
-        { key: "pdf_placement_higher",        label: "Higher Studies",                 fmt: fmtN,   higher: true  },
-        { key: "pdf_median_salary",           label: "Median Salary",                  fmt: fmtSal, higher: true  },
-        { key: "pdf_phd_ft_total",            label: "PhD Students — Full Time",       fmt: fmtN,   higher: true  },
-        { key: "pdf_phd_pt_total",            label: "PhD Students — Part Time",       fmt: fmtN,   higher: true  },
-        { key: "pdf_phd_ft_graduated",        label: "PhD Graduated FT (3yr)",         fmt: fmtN,   higher: true  },
-        { key: "pdf_phd_pt_graduated",        label: "PhD Graduated PT (3yr)",         fmt: fmtN,   higher: true  },
-        { key: "pdf_sponsored_projects",      label: "Sponsored Projects (3yr)",       fmt: fmtN,   higher: true  },
-        { key: "pdf_sponsored_amount",        label: "Sponsored Amount (3yr)",         fmt: fmtAmt, higher: true  },
-        { key: "pdf_consultancy_projects",    label: "Consultancy Projects (3yr)",     fmt: fmtN,   higher: true  },
-        { key: "pdf_consultancy_amount",      label: "Consultancy Amount (3yr)",       fmt: fmtAmt, higher: true  },
-        { key: "pdf_edp_participants",        label: "EDP/MDP Participants (3yr)",     fmt: fmtN,   higher: true  },
-        { key: "pdf_capital_expenditure",     label: "Capital Expenditure (3yr sum)",  fmt: fmtAmt, higher: true  },
-        { key: "pdf_operational_expenditure", label: "Operational Expenditure (3yr)",  fmt: fmtAmt, higher: true  },
+        { key: "pdf_total_intake",            label: "Total Intake",                  fmt: fmtN,   higher: false },
+        { key: "pdf_placement_placed",        label: "Students Placed",               fmt: fmtN,   higher: true  },
+        { key: "pdf_placement_higher",        label: "Higher Studies",                fmt: fmtN,   higher: true  },
+        { key: "pdf_median_salary",           label: "Median Salary",                 fmt: fmtSal, higher: true  },
+        { key: "pdf_phd_ft_total",            label: "PhD Students — Full Time",      fmt: fmtN,   higher: true  },
+        { key: "pdf_phd_pt_total",            label: "PhD Students — Part Time",      fmt: fmtN,   higher: true  },
+        { key: "pdf_phd_ft_graduated",        label: "PhD Graduated FT (3yr)",        fmt: fmtN,   higher: true  },
+        { key: "pdf_phd_pt_graduated",        label: "PhD Graduated PT (3yr)",        fmt: fmtN,   higher: true  },
+        { key: "pdf_sponsored_projects",      label: "Sponsored Projects (3yr)",      fmt: fmtN,   higher: true  },
+        { key: "pdf_sponsored_amount",        label: "Sponsored Amount (3yr)",        fmt: fmtAmt, higher: true  },
+        { key: "pdf_consultancy_projects",    label: "Consultancy Projects (3yr)",    fmt: fmtN,   higher: true  },
+        { key: "pdf_consultancy_amount",      label: "Consultancy Amount (3yr)",      fmt: fmtAmt, higher: true  },
+        { key: "pdf_capital_expenditure",     label: "Capital Expenditure (3yr sum)", fmt: fmtAmt, higher: true  },
+        { key: "pdf_operational_expenditure", label: "Operational Expenditure (3yr)", fmt: fmtAmt, higher: true  },
       ].map(m => {
         const vals = scoreRow(m.key);
         if (vals.every(v => v == null)) return null;
-        return <MetricRow key={m.key} label={m.label} values={vals} bestI={bestIdx(vals, m.higher)} fmt={m.fmt} />;
+        return (
+          <MetricRow key={m.key} label={m.label} values={vals}
+            bestI={bestIdx(vals, m.higher)} fmt={m.fmt}
+          />
+        );
       })}
 
       <div style={{ padding: "14px 24px", borderTop: `1px solid ${BORDER}`, marginTop: 12 }}>
         <p style={{ fontFamily: MONO, fontSize: "0.6rem", color: INK300 }}>
-          ★ Best value in row &nbsp;·&nbsp; Solid line = first institute · dashed = others &nbsp;·&nbsp;
-          Score data from NIRF image scorecard &nbsp;·&nbsp; PDF aggregates are 3-year sums from institutional reports
+          ★ Best value in row &nbsp;·&nbsp; Each institute compared under its own selected category &nbsp;·&nbsp;
+          Score data from NIRF image scorecard &nbsp;·&nbsp; PDF aggregates are 3-year sums
         </p>
       </div>
     </div>
