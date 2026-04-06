@@ -711,6 +711,21 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 "use client";
 import { useState, useCallback, useRef } from "react";
 import SearchBar       from "@/app/components/SearchBar";
@@ -720,12 +735,14 @@ import InstituteDetail from "@/app/components/InstituteDetail";
 import CompareView     from "@/app/components/CompareView";
 import CompareTray     from "@/app/components/CompareTray";
 
+// REPLACE WITH:
 export interface SearchHit {
   institute_code: string;
   institute_name: string;
   category:       string;
   best_year:      number;
   img_total:      number | null;
+  allCodes?:      string[];   // all codes for this institute across categories
 }
 
 export default function HomePage() {
@@ -753,6 +770,7 @@ export default function HomePage() {
     }, 220);
   }, []);
 
+  // REPLACE WITH:
   const handleSelect = useCallback((hit: SearchHit) => {
     if (compareMode) {
       setComparePicks(prev => {
@@ -764,10 +782,13 @@ export default function HomePage() {
       setQuery("");
       return;
     }
-    setSelected(hit);
+    // Find all codes for this institute name from the current search groups
+    const group = groups.find(g => g.institute_name === hit.institute_name);
+    const allCodes = group ? group.entries.map(e => e.institute_code) : [hit.institute_code];
+    setSelected({ ...hit, allCodes } as SearchHit & { allCodes: string[] });
     setGroups([]);
     setQuery("");
-  }, [compareMode]);
+  }, [compareMode, groups]);
 
   const handleBack = useCallback(() => {
     setSelected(null);
