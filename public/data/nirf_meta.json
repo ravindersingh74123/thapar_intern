@@ -692,6 +692,7 @@
     "img_jex_score",
     "img_jx_score"
   ],
+  "nirf_ranking_columns": [],
   "pdf_agg_columns": [
     "pdf_total_intake",
     "pdf_placement_placed",

@@ -2726,8 +2726,8 @@ from tqdm import tqdm
 PDF_COLUMNS = [
     "ranking_year", "category", "institute_code", "institute_name",
     "section", "program", "year", "metric", "value",
+    "nirf_score", "nirf_rank",
 ]
-
 JOIN_KEY = ["ranking_year", "category", "institute_code", "institute_name"]
 
 # Column name normalisation map.
@@ -2938,6 +2938,9 @@ def load_one_pdf_csv(path: Path) -> pd.DataFrame:
 
     df["ranking_year"]   = to_int(df["ranking_year"])
     df["category"]       = normalise_category(df["category"])
+    for col in ["nirf_score", "nirf_rank"]:
+        if col in df.columns:
+            df[col] = to_numeric(df[col].astype(str).str.replace(",", "", regex=False))
     df["institute_name"] = (
         df["institute_name"]
         .str.replace(r"^[^A-Za-z]+", "", regex=True)
@@ -3142,11 +3145,24 @@ def aggregate_pdf(df_pdf: pd.DataFrame) -> pd.DataFrame:
         "pdf_operational_expenditure": agg("Operational expenditure", r"Utilised Amount$"),
     }
 
+    # Carry nirf_score and nirf_rank through aggregation (take first non-null value)
+    extra_cols = {}
+    for col in ["nirf_score", "nirf_rank"]:
+        if col in df_pdf.columns:
+            extra_cols[col] = df_pdf.groupby(JOIN_KEY)[col].first()
+
     base = (
         df_pdf[JOIN_KEY]
         .drop_duplicates()
         .dropna(subset=["ranking_year", "institute_code"])
     )
+
+    # Carry nirf_score and nirf_rank through aggregation
+    for col in ["nirf_score", "nirf_rank"]:
+        if col in df_pdf.columns:
+            series = df_pdf.groupby(JOIN_KEY)[col].first().reset_index()
+            base = base.merge(series, on=JOIN_KEY, how="left")
+
     result = base.copy()
 
     for col_name, series in named_aggregates.items():
@@ -3200,7 +3216,9 @@ def aggregate_pdf(df_pdf: pd.DataFrame) -> pd.DataFrame:
 
 def merge_sources(df_image: pd.DataFrame, df_pdf_agg: pd.DataFrame) -> pd.DataFrame:
     if not df_image.empty:
-        score_cols = [c for c in df_image.columns if c not in JOIN_KEY]
+        # Don't prefix nirf_score/nirf_rank — keep them as-is for rankings feature
+        protected = {"nirf_score", "nirf_rank"}
+        score_cols = [c for c in df_image.columns if c not in JOIN_KEY and c not in protected]
         df_image = df_image.rename(columns={c: f"img_{c}" for c in score_cols})
 
     if df_image.empty and df_pdf_agg.empty:
@@ -3212,6 +3230,16 @@ def merge_sources(df_image: pd.DataFrame, df_pdf_agg: pd.DataFrame) -> pd.DataFr
 
     merged = pd.merge(df_image, df_pdf_agg, on=JOIN_KEY, how="outer")
     merged["ranking_year"] = to_int(merged["ranking_year"])
+    for col in ["nirf_score", "nirf_rank"]:
+        col_img = f"{col}_img"
+        col_pdf = f"{col}_pdf"
+        if col_img in merged.columns and col_pdf in merged.columns:
+            merged[col] = merged[col_img].combine_first(merged[col_pdf])
+            merged = merged.drop(columns=[col_img, col_pdf])
+        elif col_img in merged.columns:
+            merged = merged.rename(columns={col_img: col})
+        elif col_pdf in merged.columns:
+            merged = merged.rename(columns={col_pdf: col})
     merged = merged.sort_values(
         ["ranking_year", "category", "institute_code"],
         ascending=[False, True, True],
@@ -3241,6 +3269,8 @@ def write_metadata(df_raw: pd.DataFrame, df_scores: pd.DataFrame, output_dir: Pa
     img_total_cols = [c for c in all_cols if c.startswith("img_") and c.endswith("_total")]
     img_other_cols = [c for c in all_cols if c.startswith("img_")
                       and c not in img_score_cols and c not in img_total_cols]
+    # nirf_score and nirf_rank are top-level (not prefixed)
+    nirf_rank_cols = [c for c in all_cols if c in ("nirf_score", "nirf_rank")]
     pdf_named_cols = [c for c in all_cols if c.startswith("pdf_") and not c.startswith("pdf_sec_")]
     pdf_sec_cols   = [c for c in all_cols if c.startswith("pdf_sec_")]
 
@@ -3279,6 +3309,7 @@ def write_metadata(df_raw: pd.DataFrame, df_scores: pd.DataFrame, output_dir: Pa
         # Expose score_columns and image_columns for dashboard dropdowns
         "score_columns":       img_score_cols + img_total_cols,
         "image_columns":       img_score_cols,
+        "nirf_ranking_columns": nirf_rank_cols,
         "pdf_agg_columns":     pdf_named_cols,
         "year_stats":          year_stats,
     }

@@ -402,7 +402,7 @@ export async function GET(req: NextRequest) {
       g.entries.sort((a, b) => {
         const ao = CAT_ORDER[a.category] ?? 99;
         const bo = CAT_ORDER[b.category] ?? 99;
-        return ao !== bo ? ao - bo : a.category.localeCompare(b.category);
+        return ao !== bo ? ao - bo : (a.category ?? "").localeCompare(b.category ?? "");
       });
     }
 
