@@ -817,7 +817,7 @@ function NIRFScoreChart({
       <PillBar
         pills={available.map((p) => ({
           key: p.key,
-          label: p.label,
+          label: `${p.short} (${p.label})`,
           color: p.color,
         }))}
         active={active}
@@ -839,41 +839,84 @@ function NIRFScoreChart({
             <YAxis domain={[0, "auto"]} {...AX} width={32} />
             <Tooltip content={<ChartTip fmtFn={fmtScore} />} />
             <Legend
-              wrapperStyle={{ fontFamily: MONO, fontSize: "0.58rem", paddingTop: 10 }}
+              wrapperStyle={{
+                fontFamily: MONO,
+                fontSize: "0.58rem",
+                paddingTop: 10,
+              }}
               content={(props: any) => {
                 const { payload } = props;
                 if (!payload?.length) return null;
                 const DASHES = [
-                  undefined, "6 3", "2 3", "8 3 2 3", "12 3", "4 2 4 2",
+                  undefined,
+                  "6 3",
+                  "2 3",
+                  "8 3 2 3",
+                  "12 3",
+                  "4 2 4 2",
                 ];
                 return (
-                  <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "6px 16px", paddingTop: 10 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      justifyContent: "center",
+                      gap: "6px 16px",
+                      paddingTop: 10,
+                    }}
+                  >
                     {payload.map((entry: any, idx: number) => {
                       const value = entry.dataKey ?? "";
                       const sep = value.indexOf("::");
                       const code = value.slice(0, sep);
                       const paramKey = value.slice(sep + 2);
-                      const pLabel = ALL_SCORE_PARAMS.find(p => p.key === paramKey)?.short ?? paramKey;
-                      const instName = profiles[code]?.institute_name?.split(" ").slice(0, 4).join(" ") ?? code;
+                      const pLabel =
+                        ALL_SCORE_PARAMS.find((p) => p.key === paramKey)
+                          ?.short ?? paramKey;
+                      const instName =
+                        profiles[code]?.institute_name
+                          ?.split(" ")
+                          .slice(0, 4)
+                          .join(" ") ?? code;
                       const cat = instCategories[code];
                       const ci = codes.indexOf(code);
                       const col = INST_COLORS[ci];
                       // figure out which param index this is for dash pattern
-                      const pi = activeParams.findIndex(p => p.key === paramKey);
+                      const pi = activeParams.findIndex(
+                        (p) => p.key === paramKey,
+                      );
                       const dash = DASHES[pi % DASHES.length];
                       const isDashed = !!dash;
                       return (
-                        <div key={idx} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <div
+                          key={idx}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                          }}
+                        >
                           <svg width={28} height={10}>
                             <line
-                              x1={0} y1={5} x2={28} y2={5}
-                              stroke={col} strokeWidth={2}
+                              x1={0}
+                              y1={5}
+                              x2={28}
+                              y2={5}
+                              stroke={col}
+                              strokeWidth={2}
                               strokeDasharray={dash ?? undefined}
                             />
                             <circle cx={14} cy={5} r={3} fill={col} />
                           </svg>
-                          <span style={{ color: col, fontFamily: MONO, fontSize: "0.58rem" }}>
-                            {instName}{cat ? ` (${cat})` : ""} · {pLabel}
+                          <span
+                            style={{
+                              color: col,
+                              fontFamily: MONO,
+                              fontSize: "0.58rem",
+                            }}
+                          >
+                            {instName}
+                            {cat ? ` (${cat})` : ""} · {pLabel}
                           </span>
                         </div>
                       );
@@ -887,12 +930,12 @@ function NIRFScoreChart({
                 // Institute = color, Parameter = dash pattern
                 const col = INST_COLORS[ci];
                 const DASHES = [
-                  undefined,    // solid
-                  "6 3",        // dashed
-                  "2 3",        // dotted
-                  "8 3 2 3",    // dash-dot
-                  "12 3",       // long dash
-                  "4 2 4 2",    // alternating
+                  undefined, // solid
+                  "6 3", // dashed
+                  "2 3", // dotted
+                  "8 3 2 3", // dash-dot
+                  "12 3", // long dash
+                  "4 2 4 2", // alternating
                 ];
                 const dash = DASHES[pi % DASHES.length];
                 const dKey = `${code}::${p.key}`;
@@ -923,7 +966,10 @@ function NIRFScoreChart({
 // ── Radar (per-institute category aware) ──────────────────────────────────────
 
 function ScoreRadar({
-  profiles, codes, instYears, instCategories,
+  profiles,
+  codes,
+  instYears,
+  instCategories,
 }: {
   profiles: CompareData;
   codes: string[];
@@ -931,7 +977,11 @@ function ScoreRadar({
   instCategories: Record<string, string>;
 }) {
   const getRow = (code: string) =>
-    resolveRow(profiles[code], instYears[code] ?? 0, instCategories[code] ?? "");
+    resolveRow(
+      profiles[code],
+      instYears[code] ?? 0,
+      instCategories[code] ?? "",
+    );
 
   const params = ALL_SCORE_PARAMS.filter((p) =>
     codes.some((c) => toNum(getRow(c)?.[p.key]) != null),
@@ -964,34 +1014,59 @@ function ScoreRadar({
         Score Profile Radar — % of parameter maximum
       </p>
       <ResponsiveContainer width="100%" height={380}>
-        <RadarChart data={data} margin={{ top: 30, right: 80, bottom: 30, left: 80 }}>
+        <RadarChart
+          data={data}
+          margin={{ top: 30, right: 80, bottom: 30, left: 80 }}
+        >
           <PolarGrid stroke={BORDER} />
           <PolarAngleAxis
             dataKey="param"
             tick={(props: any) => {
               const { x, y, payload, cx, cy } = props;
               const FULL: Record<string, string> = {
-                SS: "Student Strength", FSR: "Faculty–Student Ratio",
-                FQE: "Faculty Qualification", FRU: "Faculty Research",
-                "OE/MIR": "Outreach & Inclusivity", OEMIR: "OE/MIR Score",
-                PU: "Perception", QP: "Quality Publication",
-                IPR: "IPR & Patents", FPPP: "Footprint of Projects",
-                GUE: "Graduate Performance", GPHD: "PhD Graduates",
-                RD: "R&D", WD: "Wider Impact",
-                ESCS: "Economic & Social", PCS: "Peer Perception",
+                SS: "Student Strength",
+                FSR: "Faculty–Student Ratio",
+                FQE: "Faculty Qualification",
+                FRU: "Faculty Research",
+                "OE/MIR": "Outreach & Inclusivity",
+                OEMIR: "OE/MIR Score",
+                PU: "Perception",
+                QP: "Quality Publication",
+                IPR: "IPR & Patents",
+                FPPP: "Footprint of Projects",
+                GUE: "Graduate Performance",
+                GPHD: "PhD Graduates",
+                RD: "R&D",
+                WD: "Wider Impact",
+                ESCS: "Economic & Social",
+                PCS: "Peer Perception",
                 PR: "Perception (PR)",
               };
               const short = payload.value;
-              const full  = FULL[short] ?? short;
-              const anchor = x > cx + 5 ? "start" : x < cx - 5 ? "end" : "middle";
+              const full = FULL[short] ?? short;
+              const anchor =
+                x > cx + 5 ? "start" : x < cx - 5 ? "end" : "middle";
               return (
                 <g>
-                  <text x={x} y={y - 6} textAnchor={anchor}
-                    fontFamily={MONO} fontSize={9} fontWeight={600} fill={INK500}>
+                  <text
+                    x={x}
+                    y={y - 6}
+                    textAnchor={anchor}
+                    fontFamily={MONO}
+                    fontSize={9}
+                    fontWeight={600}
+                    fill={INK500}
+                  >
                     {short}
                   </text>
-                  <text x={x} y={y + 5} textAnchor={anchor}
-                    fontFamily={MONO} fontSize={7.5} fill={INK300}>
+                  <text
+                    x={x}
+                    y={y + 5}
+                    textAnchor={anchor}
+                    fontFamily={MONO}
+                    fontSize={7.5}
+                    fill={INK300}
+                  >
                     {full}
                   </text>
                 </g>
@@ -1026,7 +1101,15 @@ function ScoreRadar({
           /> */}
         </RadarChart>
       </ResponsiveContainer>
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px 20px", paddingTop: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "center",
+          gap: "8px 20px",
+          paddingTop: 14,
+        }}
+      >
         {codes.map((code, ci) => {
           const col = INST_COLORS[ci];
           const instName = profiles[code]?.institute_name ?? code;
@@ -1035,15 +1118,29 @@ function ScoreRadar({
           const row = resolveRow(profiles[code], yr ?? 0, cat ?? "");
           if (!row) return null;
           return (
-            <div key={code} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div
+              key={code}
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
+            >
               <svg width={36} height={12}>
-                <line x1={0} y1={6} x2={36} y2={6} stroke={col} strokeWidth={2} />
+                <line
+                  x1={0}
+                  y1={6}
+                  x2={36}
+                  y2={6}
+                  stroke={col}
+                  strokeWidth={2}
+                />
                 <circle cx={2} cy={6} r={2} fill={col} />
                 <circle cx={18} cy={6} r={3.5} fill={col} />
                 <circle cx={34} cy={6} r={2} fill={col} />
               </svg>
-              <span style={{ color: col, fontFamily: MONO, fontSize: "0.58rem" }}>
-                {instName}{cat ? ` (${cat})` : ""}{yr ? ` · ${yr}` : ""}
+              <span
+                style={{ color: col, fontFamily: MONO, fontSize: "0.58rem" }}
+              >
+                {instName}
+                {cat ? ` (${cat})` : ""}
+                {yr ? ` · ${yr}` : ""}
               </span>
             </div>
           );
@@ -1613,17 +1710,23 @@ export default function CompareView({ institutes, onRemove }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codes.join(",")]);
 
-  const updateInstCategory = useCallback((code: string, cat: string) => {
-    setInstCategories(prev => ({ ...prev, [code]: cat }));
-    const availYears = Object.keys(data[code]?.scoresByYear ?? {})
-      .filter(k => !k.includes("::") &&
-        (!cat || data[code]?.scoresByYear[`${k}::${cat}`] != null))
-      .map(Number)
-      .filter(n => !isNaN(n))
-      .sort((a, b) => b - a);
-    // Set to first available year, or -1 to signal "no data for this category"
-    setInstYears(prev => ({ ...prev, [code]: availYears[0] ?? -1 }));
-  }, [data]);
+  const updateInstCategory = useCallback(
+    (code: string, cat: string) => {
+      setInstCategories((prev) => ({ ...prev, [code]: cat }));
+      const availYears = Object.keys(data[code]?.scoresByYear ?? {})
+        .filter(
+          (k) =>
+            !k.includes("::") &&
+            (!cat || data[code]?.scoresByYear[`${k}::${cat}`] != null),
+        )
+        .map(Number)
+        .filter((n) => !isNaN(n))
+        .sort((a, b) => b - a);
+      // Set to first available year, or -1 to signal "no data for this category"
+      setInstYears((prev) => ({ ...prev, [code]: availYears[0] ?? -1 }));
+    },
+    [data],
+  );
 
   const updateInstYear = useCallback((code: string, yr: number) => {
     setInstYears((prev) => ({ ...prev, [code]: yr }));
@@ -1785,23 +1888,38 @@ export default function CompareView({ institutes, onRemove }: Props) {
                     >
                       {p?.institute_name ?? code}
                     </p>
-                    <p style={{ fontFamily: MONO, fontSize: "0.6rem", color: INK300, marginBottom: 2 }}>
+                    <p
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: "0.6rem",
+                        color: INK300,
+                        marginBottom: 2,
+                      }}
+                    >
                       {(row?.institute_code as string | undefined) ?? code}
                     </p>
 
                     {/* ── Per-institute year selector ── */}
                     {(() => {
-                      const availYears = getAvailYears(code, instCategories[code] ?? "");
-                      const activeYr = instYears[code];
-                      if (availYears.length === 0) return (
-                        <p style={{
-                          fontFamily: MONO, fontSize: "0.6rem",
-                          color: INK300, marginTop: 6,
-                          fontStyle: "italic",
-                        }}>
-                          No data available for this category
-                        </p>
+                      const availYears = getAvailYears(
+                        code,
+                        instCategories[code] ?? "",
                       );
+                      const activeYr = instYears[code];
+                      if (availYears.length === 0)
+                        return (
+                          <p
+                            style={{
+                              fontFamily: MONO,
+                              fontSize: "0.6rem",
+                              color: INK300,
+                              marginTop: 6,
+                              fontStyle: "italic",
+                            }}
+                          >
+                            No data available for this category
+                          </p>
+                        );
                       return (
                         <div style={{ marginTop: 6, marginBottom: 2 }}>
                           <p
@@ -1908,10 +2026,12 @@ export default function CompareView({ institutes, onRemove }: Props) {
         years={allYears}
         instCategories={instCategories}
       />
-      {loadedCodes.some(c => instYears[c]) && (
+      {loadedCodes.some((c) => instYears[c]) && (
         <ScoreRadar
-          profiles={data} codes={loadedCodes}
-          instYears={instYears} instCategories={instCategories}
+          profiles={data}
+          codes={loadedCodes}
+          instYears={instYears}
+          instCategories={instCategories}
         />
       )}
 

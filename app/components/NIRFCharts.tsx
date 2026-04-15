@@ -239,8 +239,6 @@ export interface RawMetric {
   program: string;
 }
 
-
-
 function normalizeProg(p: string): string {
   if (!p) return p;
   const s = p.trim();
@@ -264,6 +262,7 @@ const PARAM_SHORT: Record<string, string> = {
   img_fqe_score: "FQE",
   img_fru_score: "FRU",
   img_oe_mir_score: "OE/MIR",
+  img_oemir_score: "OEMIR",
   img_pu_score: "PU",
   img_qp_score: "QP",
   img_ipr_score: "IPR",
@@ -275,24 +274,84 @@ const PARAM_SHORT: Record<string, string> = {
   img_escs_score: "ESCS",
   img_pcs_score: "PCS",
   img_pr_score: "PR",
+  img_pra_score: "PRA",
+  img_gph_score: "GPH",
+  img_gqe_score: "GQE",
+  img_gpg_score: "GPG",
+  img_fpi_score: "FPI",
+  img_jcr_score: "JCR",
+  img_in_score: "IN",
+  img_gc_score: "GC",
+  img_sctc_score: "SCTC",
+  img_fpf_score: "FPF",
+  img_gi_score: "GI",
+  img_fp_score: "FP",
+  img_inx_score: "INX",
+  img_tp_score: "TP",
+  img_sees_score: "SEES",
+  img_sdg_score: "SDG",
+  img_col4_score: "COL4",
+  img_col1_score: "COL1",
+  img_col5_score: "COL5",
+  img_col7_score: "COL7",
+  img_jex_score: "JEX",
+  img_jx_score: "JX",
+  img_premp_score: "PREMP",
+  img_gphe_score: "GPHE",
+  img_ms_score: "MS",
+  img_gss_score: "GSS",
+  img_oe_score: "OE",
+  img_ie_score: "IE",
+  img_je_score: "JE",
 };
+
 const PARAM_FULL: Record<string, string> = {
   SS: "Student Strength",
-  FSR: "Faculty–Student Ratio",
-  FQE: "Faculty Qualification",
-  FRU: "Faculty Research",
-  "OE/MIR": "Outreach & Inclusivity",
-  PU: "Perception",
+  FSR: "Faculty-Student Ratio",
+  FQE: "Faculty Qualification & Experience",
+  FRU: "Financial Resources Utilization",
+  "OE/MIR": "Outreach & Equity Metric (Intl + Regional)",
+  OEMIR: "Outreach & Equity Metric (Intl + Regional)",
+  PU: "Perception (University)",
   QP: "Quality Publication",
-  IPR: "IPR & Patents",
-  FPPP: "Footprint of Projects",
-  GUE: "Graduate Performance",
-  GPHD: "PhD Graduates",
-  RD: "R&D",
-  WD: "Wider Impact",
-  ESCS: "Economic & Social",
-  PCS: "Peer Perception",
-  PR: "Perception",
+  IPR: "Intellectual Property Rights (Patents)",
+  FPPP: "Footprint of Projects & Professional Practice",
+  GUE: "Graduation Outcome (UG Employment)",
+  GPHD: "Graduation Outcome (PhD Students)",
+  RD: "Regional Diversity",
+  WD: "Women Diversity",
+  ESCS: "Economically Challenged Students",
+  PCS: "Physically Challenged Students",
+  PR: "Perception Score",
+  PRA: "Publications (Research Articles)",
+  GPH: "Publications in High Impact Journals",
+  GQE: "Quality of Publications",
+  GPG: "Publications per Faculty",
+  FPI: "Faculty with PhD Index",
+  JCR: "Journal Citation Reports",
+  IN: "Impact Normalized Citations",
+  GC: "Global Citations",
+  SCTC: "Scopus Citation Count",
+  FPF: "Faculty Publication Productivity",
+  GI: "Global Impact",
+  FP: "Faculty Publications",
+  INX: "Indexed Publications",
+  TP: "Teaching Performance",
+  SEES: "Social/Environmental Engagement Score",
+  SDG: "Sustainable Development Goals Contribution",
+  COL1: "Research Collaboration Metric 1",
+  COL4: "Collaboration Metric 4",
+  COL5: "Collaboration Metric 5",
+  COL7: "Collaboration Metric 7",
+  JEX: "Joint Exchange Programs",
+  JX: "Joint Research/Exchange",
+  IE: "International Engagement",
+  JE: "Joint Publications",
+  PREMP: "Pre-Employment Score",
+  GPHE: "Global Perception (Higher Education)",
+  MS: "Median Salary",
+  GSS: "Graduate Student Strength",
+  OE: "Overall Employment Outcome",
 };
 
 export function ScoresTrendChart({
@@ -309,6 +368,9 @@ export function ScoresTrendChart({
     .sort((a, b) => a - b);
   if (years.length < 2 || !imgCols.length) return null;
 
+  // Include img_total as a special "TOTAL" series
+  const allKeys = ["img_total", ...imgCols];
+
   const data = years.map((yr) => {
     const row = (scoresByYear as Record<string, unknown>)[String(yr)] as Record<
       string,
@@ -316,6 +378,11 @@ export function ScoresTrendChart({
     >;
     if (!row) return { year: yr };
     const pt: Record<string, any> = { year: yr };
+    // Add total score
+    if (row["img_total"] != null) {
+      pt["TOTAL"] = +Number(row["img_total"]).toFixed(2);
+    }
+    // Add param scores
     for (const k of imgCols) {
       const v = row[k];
       if (v != null) pt[PARAM_SHORT[k] ?? k] = +Number(v).toFixed(2);
@@ -323,26 +390,36 @@ export function ScoresTrendChart({
     return pt;
   });
 
-  const active = imgCols.filter(
-    (k) => data.filter((d) => d[PARAM_SHORT[k] ?? k] != null).length >= 2,
-  );
-  if (!active.length) return null;
+  // Build list of available series keys (short names)
+  const availableKeys = [
+    "TOTAL",
+    ...imgCols
+      .filter(
+        (k) => data.filter((d) => d[PARAM_SHORT[k] ?? k] != null).length >= 2,
+      )
+      .map((k) => PARAM_SHORT[k] ?? k),
+  ].filter((key, _, arr) => arr.indexOf(key) === arr.indexOf(key)); // dedupe
 
-  // Colour stable per param key index
-  const paramColor = Object.fromEntries(
-    active.map((k, i) => [PARAM_SHORT[k] ?? k, PALETTE[i % PALETTE.length]]),
-  );
+  // Colour per key — TOTAL gets a distinct dark color
+  const paramColor: Record<string, string> = { TOTAL: "#1a1916" };
+  let ci = 0;
+  for (const k of imgCols) {
+    const short = PARAM_SHORT[k] ?? k;
+    if (!paramColor[short]) {
+      paramColor[short] = PALETTE[ci % PALETTE.length];
+      ci++;
+    }
+  }
 
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const [selected, setSelected] = useState<Set<string>>(
-    new Set(active.map((k) => PARAM_SHORT[k] ?? k)),
+    () => new Set(availableKeys.slice(0, 6)),
   );
 
   const toggleParam = (key: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
-        // keep at least 1 selected
         if (next.size > 1) next.delete(key);
       } else {
         next.add(key);
@@ -351,7 +428,25 @@ export function ScoresTrendChart({
     });
   };
 
-  const visibleParams = active.filter((k) => selected.has(PARAM_SHORT[k] ?? k));
+  // ALL toggle: if all selected → deselect all except TOTAL; if not all → select all
+  const allSelected = availableKeys.every((k) => selected.has(k));
+  const toggleAll = () => {
+    if (allSelected) {
+      // Deselect all — keep only TOTAL so chart isn't empty
+      setSelected(new Set(["TOTAL"]));
+    } else {
+      setSelected(new Set(availableKeys));
+    }
+  };
+
+  const visibleKeys = availableKeys.filter((k) => selected.has(k));
+
+  // Helper: get pill label with full form
+  const pillLabel = (key: string) => {
+    if (key === "TOTAL") return "NIRF Total Score";
+    const full = PARAM_FULL[key];
+    return full ? `${key} (${full})` : key;
+  };
 
   return (
     <ChartCard title="Parameter Scores — Trend by Ranking Year">
@@ -380,30 +475,62 @@ export function ScoresTrendChart({
         >
           Parameters
         </span>
-        {/* All / None shortcuts */}
+
+        {/* All toggle */}
         <button
-          onClick={() =>
-            setSelected(new Set(active.map((k) => PARAM_SHORT[k] ?? k)))
-          }
+          onClick={toggleAll}
           style={{
             fontFamily: MONO,
             fontSize: "0.6rem",
-            padding: "2px 8px",
-            border: `1px solid ${BORDER}`,
-            background: "var(--white)",
-            color: INK300,
+            padding: "2px 10px",
+            border: `1px solid ${allSelected ? CRIMSON : BORDER}`,
+            background: allSelected ? CRIMSON : "var(--white)",
+            color: allSelected ? "#fff" : INK300,
             cursor: "pointer",
             borderRadius: 2,
+            transition: "all 0.12s",
+            fontWeight: allSelected ? 600 : 400,
           }}
         >
-          All
+          {allSelected ? "All ✓" : "All"}
         </button>
-        {/* Individual param pills */}
-        {active.map((k) => {
-          const key = PARAM_SHORT[k] ?? k;
-          const label = PARAM_FULL[key] ?? key;
+
+        {/* TOTAL pill */}
+        {(() => {
+          const key = "TOTAL";
           const on = selected.has(key);
           const color = paramColor[key];
+          return (
+            <button
+              key={key}
+              onClick={() => toggleParam(key)}
+              style={{
+                fontFamily: MONO,
+                fontSize: "0.62rem",
+                padding: "3px 10px",
+                border: `1px solid ${on ? color : BORDER}`,
+                background: on ? color : "var(--white)",
+                color: on ? "#fff" : INK300,
+                cursor: "pointer",
+                borderRadius: 2,
+                transition: "all 0.12s",
+                whiteSpace: "nowrap",
+                fontWeight: on ? 600 : 400,
+              }}
+            >
+              NIRF Total Score
+            </button>
+          );
+        })()}
+
+        {/* Individual param pills */}
+        {imgCols.map((k) => {
+          const key = PARAM_SHORT[k] ?? k;
+          const full = PARAM_FULL[key];
+          const label = full ? `${key} (${full})` : key;
+          const on = selected.has(key);
+          const color = paramColor[key];
+          if (!availableKeys.includes(key)) return null;
           return (
             <button
               key={k}
@@ -419,6 +546,7 @@ export function ScoresTrendChart({
                 borderRadius: 2,
                 transition: "all 0.12s",
                 whiteSpace: "nowrap",
+                fontWeight: on ? 600 : 400,
               }}
             >
               {label}
@@ -427,7 +555,7 @@ export function ScoresTrendChart({
         })}
       </div>
 
-      {/* Chart — taller, more breathing room */}
+      {/* Chart */}
       <ResponsiveContainer width="100%" height={380}>
         <LineChart
           data={data}
@@ -451,16 +579,39 @@ export function ScoresTrendChart({
             width={32}
           />
           <Tooltip content={<Tip fmt={(v: number) => v?.toFixed(2)} />} />
-          {/* No recharts Legend — we use pills above */}
-          {visibleParams.map((k) => {
+          {/* TOTAL line */}
+          {selected.has("TOTAL") && (
+            <Line
+              key="TOTAL"
+              type="monotone"
+              dataKey="TOTAL"
+              name="NIRF Total Score"
+              stroke={paramColor["TOTAL"]}
+              strokeWidth={3}
+              strokeDasharray="6 3"
+              dot={{ r: 5, strokeWidth: 0, fill: paramColor["TOTAL"] }}
+              activeDot={{
+                r: 7,
+                stroke: paramColor["TOTAL"],
+                strokeWidth: 2,
+                fill: "#fff",
+              }}
+              connectNulls
+            />
+          )}
+          {/* Param lines */}
+          {imgCols.map((k) => {
             const key = PARAM_SHORT[k] ?? k;
+            if (!selected.has(key)) return null;
+            if (!availableKeys.includes(key)) return null;
             const color = paramColor[key];
+            const fullName = PARAM_FULL[key] ?? key;
             return (
               <Line
                 key={k}
                 type="monotone"
                 dataKey={key}
-                name={PARAM_FULL[key] ?? key}
+                name={`${key} — ${fullName}`}
                 stroke={color}
                 strokeWidth={2}
                 dot={{ r: 4, strokeWidth: 0, fill: color }}
@@ -669,32 +820,41 @@ export function PlacementTrendChart({
     }
   }
 
-// eslint-disable-next-line react-hooks/rules-of-hooks
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const [group, setGroup] = useState("All");
 
-const years = sortYrs(Array.from(yearSet));
-  if (years.length < 2) return (
-    <ChartCard title="Placement Trend">
-      <ProgramSelector
-        programs={programs}
-        selected={validProg}
-        onChange={setSelectedProg}
-      />
-      <p style={{ fontFamily: MONO, fontSize: "0.72rem", color: INK300, padding: "16px 0" }}>
-        Not enough data across years for the selected program.
-      </p>
-    </ChartCard>
-  );
+  const years = sortYrs(Array.from(yearSet));
+  if (years.length < 2)
+    return (
+      <ChartCard title="Placement Trend">
+        <ProgramSelector
+          programs={programs}
+          selected={validProg}
+          onChange={setSelectedProg}
+        />
+        <p
+          style={{
+            fontFamily: MONO,
+            fontSize: "0.72rem",
+            color: INK300,
+            padding: "16px 0",
+          }}
+        >
+          Not enough data across years for the selected program.
+        </p>
+      </ChartCard>
+    );
 
   const gradKeys = [K_PLACED, K_GRAD, K_HIGHER].filter((k) => mmap.has(k));
-  const intakeKeys = [K_INTAKE, K_ADMITTED, K_LATERAL].filter((k) => mmap.has(k));
+  const intakeKeys = [K_INTAKE, K_ADMITTED, K_LATERAL].filter((k) =>
+    mmap.has(k),
+  );
   const hasSalary = mmap.has(K_SALARY);
 
   const GROUPS: string[] = [];
   if (gradKeys.length) GROUPS.push("Graduation");
   if (intakeKeys.length) GROUPS.push("Intake");
   if (GROUPS.length > 1) GROUPS.unshift("All");
-
 
   const activeGroup = GROUPS.includes(group) ? group : (GROUPS[0] ?? "All");
 
@@ -1343,7 +1503,9 @@ export function StudentsTrendChart({
     // Use academic year if available, else fall back to ranking_year
     const yr = isRealYear(m.year)
       ? baseYear(m.year)
-      : m.ranking_year ? String(m.ranking_year) : null;
+      : m.ranking_year
+        ? String(m.ranking_year)
+        : null;
     if (!yr) continue;
     if (!yearMap.has(yr)) yearMap.set(yr, new Map());
     const ym = yearMap.get(yr)!;
@@ -1351,16 +1513,28 @@ export function StudentsTrendChart({
   }
 
   const years = sortYrs(Array.from(yearMap.keys()));
-  if (years.length < 2) return (
-    <>
-      <ChartCard title="Student Composition — Trend by Ranking Year">
-        <ProgramSelector programs={progs} selected={validProg} onChange={setSelectedProg} />
-        <p style={{ fontFamily: MONO, fontSize: "0.72rem", color: INK300, padding: "16px 0" }}>
-          Not enough data across years for the selected program.
-        </p>
-      </ChartCard>
-    </>
-  );
+  if (years.length < 2)
+    return (
+      <>
+        <ChartCard title="Student Composition — Trend by Ranking Year">
+          <ProgramSelector
+            programs={progs}
+            selected={validProg}
+            onChange={setSelectedProg}
+          />
+          <p
+            style={{
+              fontFamily: MONO,
+              fontSize: "0.72rem",
+              color: INK300,
+              padding: "16px 0",
+            }}
+          >
+            Not enough data across years for the selected program.
+          </p>
+        </ChartCard>
+      </>
+    );
 
   const data = years.map((yr) => {
     const pt: Record<string, any> = { year: yr };
@@ -1380,26 +1554,50 @@ export function StudentsTrendChart({
   const divSeries = activeSeries("diversity");
   const feeSeries = activeSeries("fee");
 
-  if (!compSeries.length && !divSeries.length && !feeSeries.length) return (
-    <ChartCard title="Student Trends">
-      <ProgramSelector programs={progs} selected={validProg} onChange={setSelectedProg} />
-      <p style={{ fontFamily: MONO, fontSize: "0.72rem", color: INK300, padding: "16px 0" }}>
-        Not enough data across years for the selected program.
-      </p>
-    </ChartCard>
-  );
-
-  // Inline chart renderer — takes series labels, renders a full chart card
-  // selector is rendered fresh inside each card so React doesn't share instances
-  const renderChart = (title: string, series: string[]) => {
-    if (!series.length) return (
-      <ChartCard title={title}>
-        <ProgramSelector programs={progs} selected={validProg} onChange={setSelectedProg} />
-        <p style={{ fontFamily: MONO, fontSize: "0.72rem", color: INK300, padding: "16px 0" }}>
+  if (!compSeries.length && !divSeries.length && !feeSeries.length)
+    return (
+      <ChartCard title="Student Trends">
+        <ProgramSelector
+          programs={progs}
+          selected={validProg}
+          onChange={setSelectedProg}
+        />
+        <p
+          style={{
+            fontFamily: MONO,
+            fontSize: "0.72rem",
+            color: INK300,
+            padding: "16px 0",
+          }}
+        >
           Not enough data across years for the selected program.
         </p>
       </ChartCard>
     );
+
+  // Inline chart renderer — takes series labels, renders a full chart card
+  // selector is rendered fresh inside each card so React doesn't share instances
+  const renderChart = (title: string, series: string[]) => {
+    if (!series.length)
+      return (
+        <ChartCard title={title}>
+          <ProgramSelector
+            programs={progs}
+            selected={validProg}
+            onChange={setSelectedProg}
+          />
+          <p
+            style={{
+              fontFamily: MONO,
+              fontSize: "0.72rem",
+              color: INK300,
+              padding: "16px 0",
+            }}
+          >
+            Not enough data across years for the selected program.
+          </p>
+        </ChartCard>
+      );
     return (
       <ChartCard title={title}>
         <ProgramSelector

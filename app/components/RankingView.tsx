@@ -117,6 +117,7 @@ export default function RankingView({ onSelectInstitute }: Props) {
     Record<number, string[]>
   >({});
   const [sortBy, setSortBy] = useState<string>("nirf_rank");
+  const [activeParams, setActiveParams] = useState<string[]>([]);
   const [availableParams, setAvailableParams] = useState<string[]>([]);
 
   const load = useCallback((year: number, cat: string, sort: string) => {
@@ -346,40 +347,47 @@ export default function RankingView({ onSelectInstitute }: Props) {
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
               <button
-                onClick={() => setSortBy("nirf_rank")}
+                onClick={() => setActiveParams([])}
                 style={{
                   fontFamily: MONO,
                   fontSize: "0.65rem",
                   padding: "3px 10px",
-                  background: sortBy === "nirf_rank" ? col : WHITE,
-                  color: sortBy === "nirf_rank" ? "#fff" : INK500,
-                  border: `1px solid ${sortBy === "nirf_rank" ? col : BORDER}`,
+                  background: activeParams.length === 0 ? col : WHITE,
+                  color: activeParams.length === 0 ? "#fff" : INK500,
+                  border: `1px solid ${activeParams.length === 0 ? col : BORDER}`,
                   cursor: "pointer",
                   transition: "all 0.12s",
                 }}
               >
                 None
               </button>
-              {availableParams.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setSortBy(p)}
-                  style={{
-                    fontFamily: MONO,
-                    fontSize: "0.65rem",
-                    padding: "3px 10px",
-                    background: sortBy === p ? col : WHITE,
-                    color: sortBy === p ? "#fff" : INK500,
-                    border: `1px solid ${sortBy === p ? col : BORDER}`,
-                    cursor: "pointer",
-                    transition: "all 0.12s",
-                    fontWeight: sortBy === p ? 600 : 400,
-                  }}
-                >
-                  {PARAM_LABELS[p] ??
-                    p.replace("img_", "").replace("_score", "").toUpperCase()}
-                </button>
-              ))}
+              {availableParams.map((p) => {
+                const isActive = activeParams.includes(p);
+                return (
+                  <button
+                    key={p}
+                    onClick={() => {
+                      setActiveParams((prev) =>
+                        isActive ? prev.filter((x) => x !== p) : [...prev, p],
+                      );
+                    }}
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: "0.65rem",
+                      padding: "3px 10px",
+                      background: isActive ? col : WHITE,
+                      color: isActive ? "#fff" : INK500,
+                      border: `1px solid ${isActive ? col : BORDER}`,
+                      cursor: "pointer",
+                      transition: "all 0.12s",
+                      fontWeight: isActive ? 600 : 400,
+                    }}
+                  >
+                    {PARAM_LABELS[p] ??
+                      p.replace("img_", "").replace("_score", "").toUpperCase()}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -447,7 +455,7 @@ export default function RankingView({ onSelectInstitute }: Props) {
               >
                 <th style={TH}>Rank</th>
                 <th style={TH}>Institute</th>
-                {/* Score — click to sort by overall score */}
+                {/* Score column — click to sort by rank */}
                 <th
                   onClick={() => setSortBy("nirf_rank")}
                   style={{
@@ -461,24 +469,29 @@ export default function RankingView({ onSelectInstitute }: Props) {
                 >
                   Score {sortBy === "nirf_rank" ? "▼" : "↕"}
                 </th>
-                {/* Parameter column — always visible when selected, click header to sort by it */}
-                {sortBy !== "nirf_rank" && (
+                {/* One column per active parameter */}
+                {activeParams.map((p) => (
                   <th
+                    key={p}
+                    onClick={() => setSortBy(sortBy === p ? "nirf_rank" : p)}
                     style={{
                       ...TH,
                       textAlign: "right",
-                      color: col,
+                      cursor: "pointer",
+                      color: sortBy === p ? col : "var(--ink-400)",
+                      userSelect: "none",
                       minWidth: 80,
+                      background: sortBy === p ? `${col}10` : OFF_WHITE,
                     }}
                   >
-                    {PARAM_LABELS[sortBy] ??
-                      sortBy
+                    {PARAM_LABELS[p] ??
+                      p
                         .replace("img_", "")
                         .replace("_score", "")
                         .toUpperCase()}{" "}
-                    ▼
+                    {sortBy === p ? "▼" : "↕"}
                   </th>
-                )}
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -502,6 +515,7 @@ export default function RankingView({ onSelectInstitute }: Props) {
                 >
                   {/* Rank */}
                   {/* Rank — always shows position based on current sort */}
+                  {/* Rank — always shows original NIRF rank */}
                   <td
                     style={{
                       padding: "12px 16px",
@@ -513,7 +527,7 @@ export default function RankingView({ onSelectInstitute }: Props) {
                       textAlign: "center",
                     }}
                   >
-                    {i + 1}
+                    {row.nirf_rank != null ? row.nirf_rank : "—"}
                   </td>
 
                   {/* Institute */}
@@ -555,30 +569,32 @@ export default function RankingView({ onSelectInstitute }: Props) {
                     {row.nirf_score != null ? row.nirf_score.toFixed(2) : "—"}
                   </td>
                   {/* Parameter column — sorted, shown in accent color */}
-                  {sortBy !== "nirf_rank" && (
+                  {activeParams.map((p) => (
                     <td
+                      key={p}
                       style={{
                         padding: "12px 16px",
                         textAlign: "right",
                         fontFamily: MONO,
                         fontSize: "0.9rem",
-                        color: col,
-                        fontWeight: 700,
+                        color: sortBy === p ? col : "var(--ink-700)",
+                        fontWeight: sortBy === p ? 700 : 400,
                         minWidth: 80,
+                        background: sortBy === p ? `${col}08` : "transparent",
                       }}
                     >
-                      {(row as any)[sortBy] != null
-                        ? Number((row as any)[sortBy]).toFixed(2)
+                      {(row as any)[p] != null
+                        ? Number((row as any)[p]).toFixed(2)
                         : "—"}
                     </td>
-                  )}
+                  ))}
                 </tr>
               ))}
 
               {!filtered.length && (
                 <tr>
                   <td
-                    colSpan={sortBy !== "nirf_rank" ? 4 : 3}
+                    colSpan={3 + activeParams.length}
                     style={{
                       padding: "32px",
                       textAlign: "center",
