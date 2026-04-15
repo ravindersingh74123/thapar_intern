@@ -9,6 +9,22 @@ interface RankRow {
   ranking_year: number;
   nirf_score: number | null;
   nirf_rank: number | null;
+  img_ss_score: number | null;
+  img_fsr_score: number | null;
+  img_fqe_score: number | null;
+  img_fru_score: number | null;
+  img_pu_score: number | null;
+  img_qp_score: number | null;
+  img_ipr_score: number | null;
+  img_fppp_score: number | null;
+  img_gue_score: number | null;
+  img_gphd_score: number | null;
+  img_rd_score: number | null;
+  img_wd_score: number | null;
+  img_escs_score: number | null;
+  img_pcs_score: number | null;
+  img_pr_score: number | null;
+  img_oemir_score: number | null;
 }
 
 interface Props {
@@ -24,6 +40,54 @@ const INK300 = "var(--ink-300)";
 const INK500 = "var(--ink-500)";
 const INK900 = "var(--ink-900)";
 const WHITE = "var(--white)";
+
+const PARAM_LABELS: Record<string, string> = {
+  img_ss_score: "SS",
+  img_fsr_score: "FSR",
+  img_fqe_score: "FQE",
+  img_fru_score: "FRU",
+  img_pu_score: "PU",
+  img_qp_score: "QP",
+  img_ipr_score: "IPR",
+  img_fppp_score: "FPPP",
+  img_gue_score: "GUE",
+  img_gphd_score: "GPHD",
+  img_rd_score: "RD",
+  img_wd_score: "WD",
+  img_escs_score: "ESCS",
+  img_pcs_score: "PCS",
+  img_pr_score: "PR",
+  img_oemir_score: "OE/MIR",
+  img_pra_score: "PRA",
+  img_gph_score: "GPH",
+  img_gqe_score: "GQE",
+  img_je_score: "JE",
+  img_ie_score: "IE",
+  img_gpg_score: "GPG",
+  img_fpi_score: "FPI",
+  img_jcr_score: "JCR",
+  img_in_score: "IN",
+  img_gc_score: "GC",
+  img_sctc_score: "SCTC",
+  img_fpf_score: "FPF",
+  img_gi_score: "GI",
+  img_fp_score: "FP",
+  img_inx_score: "INX",
+  img_tp_score: "TP",
+  img_sees_score: "SEES",
+  img_sdg_score: "SDG",
+  img_col4_score: "COL4",
+  img_jex_score: "JEX",
+  img_jx_score: "JX",
+  img_premp_score: "PREMP",
+  img_gphe_score: "GPHE",
+  img_ms_score: "MS",
+  img_gss_score: "GSS",
+  img_col1_score: "COL1",
+  img_oe_score: "OE",
+  img_col5_score: "COL5",
+  img_col7_score: "COL7",
+};
 
 const CAT_COLORS: Record<string, string> = {
   Overall: "#c0392b",
@@ -52,10 +116,14 @@ export default function RankingView({ onSelectInstitute }: Props) {
   const [yearCategoryMap, setYearCategoryMap] = useState<
     Record<number, string[]>
   >({});
+  const [sortBy, setSortBy] = useState<string>("nirf_rank");
+  const [availableParams, setAvailableParams] = useState<string[]>([]);
 
-  const load = useCallback((year: number, cat: string) => {
+  const load = useCallback((year: number, cat: string, sort: string) => {
     setLoading(true);
-    fetch(`/api/rankings?year=${year}&category=${encodeURIComponent(cat)}`)
+    fetch(
+      `/api/rankings?year=${year}&category=${encodeURIComponent(cat)}&sortBy=${sort}`,
+    )
       .then((r) => r.json())
       .then((d) => {
         setRows(d.rows ?? []);
@@ -63,13 +131,14 @@ export default function RankingView({ onSelectInstitute }: Props) {
         setCategories(d.categories ?? []);
         setYearCategoryMap(d.yearCategoryMap ?? {});
         setLoading(false);
+        setAvailableParams(d.availableParams ?? []);
       })
       .catch(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    load(selYear, selCat);
-  }, [selYear, selCat, load]);
+    load(selYear, selCat, sortBy);
+  }, [selYear, selCat, sortBy, load]);
 
   const filtered = rows.filter(
     (r) =>
@@ -147,10 +216,10 @@ export default function RankingView({ onSelectInstitute }: Props) {
                 key={y}
                 onClick={() => {
                   setSelYear(y);
-                  // Reset category to first available for this year
                   const catsForYear = yearCategoryMap[y] ?? [];
                   const firstCat = catsForYear[0] ?? "Overall";
                   setSelCat(firstCat);
+                  setSortBy("nirf_rank");
                 }}
                 style={{
                   fontFamily: MONO,
@@ -191,7 +260,10 @@ export default function RankingView({ onSelectInstitute }: Props) {
               return (
                 <button
                   key={cat}
-                  onClick={() => setSelCat(cat)}
+                  onClick={() => {
+                    setSelCat(cat);
+                    setSortBy("nirf_rank");
+                  }}
                   style={{
                     fontFamily: MONO,
                     fontSize: "0.68rem",
@@ -210,6 +282,107 @@ export default function RankingView({ onSelectInstitute }: Props) {
             })}
           </div>
         </div>
+
+        {/* Sort by parameter */}
+        {/* Sort by parameter — only show params with data */}
+        {/* <div>
+          <p
+            style={{
+              fontFamily: MONO,
+              fontSize: "0.58rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: INK300,
+              marginBottom: 8,
+            }}
+          >
+            Sort By
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {[
+              { key: "nirf_rank", label: "Overall Rank" },
+              ...availableParams.map((p) => ({
+                key: p,
+                label:
+                  PARAM_LABELS[p] ??
+                  p.replace("img_", "").replace("_score", "").toUpperCase(),
+              })),
+            ].map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setSortBy(p.key)}
+                style={{
+                  fontFamily: MONO,
+                  fontSize: "0.65rem",
+                  padding: "3px 10px",
+                  background: sortBy === p.key ? col : WHITE,
+                  color: sortBy === p.key ? "#fff" : INK500,
+                  border: `1px solid ${sortBy === p.key ? col : BORDER}`,
+                  cursor: "pointer",
+                  transition: "all 0.12s",
+                  fontWeight: sortBy === p.key ? 600 : 400,
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div> */}
+
+        {/* Parameter column selector */}
+        {availableParams.length > 0 && (
+          <div>
+            <p
+              style={{
+                fontFamily: MONO,
+                fontSize: "0.58rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                color: INK300,
+                marginBottom: 8,
+              }}
+            >
+              Add Parameter Column
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              <button
+                onClick={() => setSortBy("nirf_rank")}
+                style={{
+                  fontFamily: MONO,
+                  fontSize: "0.65rem",
+                  padding: "3px 10px",
+                  background: sortBy === "nirf_rank" ? col : WHITE,
+                  color: sortBy === "nirf_rank" ? "#fff" : INK500,
+                  border: `1px solid ${sortBy === "nirf_rank" ? col : BORDER}`,
+                  cursor: "pointer",
+                  transition: "all 0.12s",
+                }}
+              >
+                None
+              </button>
+              {availableParams.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setSortBy(p)}
+                  style={{
+                    fontFamily: MONO,
+                    fontSize: "0.65rem",
+                    padding: "3px 10px",
+                    background: sortBy === p ? col : WHITE,
+                    color: sortBy === p ? "#fff" : INK500,
+                    border: `1px solid ${sortBy === p ? col : BORDER}`,
+                    cursor: "pointer",
+                    transition: "all 0.12s",
+                    fontWeight: sortBy === p ? 600 : 400,
+                  }}
+                >
+                  {PARAM_LABELS[p] ??
+                    p.replace("img_", "").replace("_score", "").toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Search */}
         <div>
@@ -274,7 +447,38 @@ export default function RankingView({ onSelectInstitute }: Props) {
               >
                 <th style={TH}>Rank</th>
                 <th style={TH}>Institute</th>
-                <th style={{ ...TH, textAlign: "right" }}>Score</th>
+                {/* Score — click to sort by overall score */}
+                <th
+                  onClick={() => setSortBy("nirf_rank")}
+                  style={{
+                    ...TH,
+                    textAlign: "right",
+                    cursor: "pointer",
+                    color: sortBy === "nirf_rank" ? col : "var(--ink-400)",
+                    userSelect: "none",
+                    minWidth: 90,
+                  }}
+                >
+                  Score {sortBy === "nirf_rank" ? "▼" : "↕"}
+                </th>
+                {/* Parameter column — always visible when selected, click header to sort by it */}
+                {sortBy !== "nirf_rank" && (
+                  <th
+                    style={{
+                      ...TH,
+                      textAlign: "right",
+                      color: col,
+                      minWidth: 80,
+                    }}
+                  >
+                    {PARAM_LABELS[sortBy] ??
+                      sortBy
+                        .replace("img_", "")
+                        .replace("_score", "")
+                        .toUpperCase()}{" "}
+                    ▼
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -297,6 +501,7 @@ export default function RankingView({ onSelectInstitute }: Props) {
                   }
                 >
                   {/* Rank */}
+                  {/* Rank — always shows position based on current sort */}
                   <td
                     style={{
                       padding: "12px 16px",
@@ -308,7 +513,7 @@ export default function RankingView({ onSelectInstitute }: Props) {
                       textAlign: "center",
                     }}
                   >
-                    {row.nirf_rank != null ? row.nirf_rank : i + 1}
+                    {i + 1}
                   </td>
 
                   {/* Institute */}
@@ -335,27 +540,45 @@ export default function RankingView({ onSelectInstitute }: Props) {
                     </p>
                   </td>
 
-                  {/* Score */}
+                  {/* Score — always shown */}
                   <td
                     style={{
                       padding: "12px 16px",
                       textAlign: "right",
                       fontFamily: MONO,
                       fontSize: "0.9rem",
-                      color: col,
-                      fontWeight: 700,
+                      color: sortBy === "nirf_rank" ? col : "var(--ink-500)",
+                      fontWeight: sortBy === "nirf_rank" ? 700 : 400,
                       minWidth: 90,
                     }}
                   >
                     {row.nirf_score != null ? row.nirf_score.toFixed(2) : "—"}
                   </td>
+                  {/* Parameter column — sorted, shown in accent color */}
+                  {sortBy !== "nirf_rank" && (
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        textAlign: "right",
+                        fontFamily: MONO,
+                        fontSize: "0.9rem",
+                        color: col,
+                        fontWeight: 700,
+                        minWidth: 80,
+                      }}
+                    >
+                      {(row as any)[sortBy] != null
+                        ? Number((row as any)[sortBy]).toFixed(2)
+                        : "—"}
+                    </td>
+                  )}
                 </tr>
               ))}
 
               {!filtered.length && (
                 <tr>
                   <td
-                    colSpan={3}
+                    colSpan={sortBy !== "nirf_rank" ? 4 : 3}
                     style={{
                       padding: "32px",
                       textAlign: "center",
