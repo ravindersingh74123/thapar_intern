@@ -147,61 +147,62 @@ const SECTION_TAB: Record<string, TabId> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PARAM_FULL_FORMS: Record<string, string> = {
-  "ss":     "Student Strength",
-  "fsr":    "Faculty-Student Ratio",
-  "fqe":    "Faculty Qualification & Experience",
-  "fru":    "Financial Resources Utilization",
-  "oe_mir": "Outreach & Equity Metric (Intl + Regional)",
-  "oemir":  "Outreach & Equity Metric (Intl + Regional)",
-  "pu":     "Perception (University)",
-  "qp":     "Quality Publication",
-  "ipr":    "Intellectual Property Rights (Patents)",
-  "fppp":   "Footprint of Projects & Professional Practice",
-  "gue":    "Graduation Outcome (UG Employment)",
-  "gphd":   "Graduation Outcome (PhD Students)",
-  "rd":     "Regional Diversity",
-  "wd":     "Women Diversity",
-  "escs":   "Economically Challenged Students",
-  "pcs":    "Physically Challenged Students",
-  "pr":     "Perception Score",
-  "pra":    "Publications (Research Articles)",
-  "gph":    "Publications in High Impact Journals",
-  "gqe":    "Quality of Publications",
-  "gpg":    "Publications per Faculty",
-  "fpi":    "Faculty with PhD Index",
-  "jcr":    "Journal Citation Reports",
-  "in":     "Impact Normalized Citations",
-  "gc":     "Global Citations",
-  "sctc":   "Scopus Citation Count",
-  "fpf":    "Faculty Publication Productivity",
-  "gi":     "Global Impact",
-  "fp":     "Faculty Publications",
-  "inx":    "Indexed Publications",
-  "tp":     "Teaching Performance",
-  "sees":   "Social/Environmental Engagement Score",
-  "sdg":    "Sustainable Development Goals Contribution",
-  "col1":   "Research Collaboration Metric 1",
-  "col4":   "Collaboration Metric 4",
-  "col5":   "Collaboration Metric 5",
-  "col7":   "Collaboration Metric 7",
-  "jex":    "Joint Exchange Programs",
-  "jx":     "Joint Research/Exchange",
-  "ie":     "International Engagement",
-  "je":     "Joint Publications",
-  "premp":  "Pre-Employment Score",
-  "gphe":   "Global Perception (Higher Education)",
-  "ms":     "Median Salary",
-  "gss":    "Graduate Student Strength",
-  "oe":     "Overall Employment Outcome",
+  ss: "Student Strength",
+  fsr: "Faculty-Student Ratio",
+  fqe: "Faculty Qualification & Experience",
+  fru: "Financial Resources Utilization",
+  oe_mir: "Outreach & Equity Metric (Intl + Regional)",
+  oemir: "Outreach & Equity Metric (Intl + Regional)",
+  pu: "Perception (University)",
+  qp: "Quality Publication",
+  ipr: "Intellectual Property Rights (Patents)",
+  fppp: "Footprint of Projects & Professional Practice",
+  gue: "Graduation Outcome (UG Employment)",
+  gphd: "Graduation Outcome (PhD Students)",
+  rd: "Regional Diversity",
+  wd: "Women Diversity",
+  escs: "Economically Challenged Students",
+  pcs: "Physically Challenged Students",
+  pr: "Perception Score",
+  pra: "Publications (Research Articles)",
+  gph: "Publications in High Impact Journals",
+  gqe: "Quality of Publications",
+  gpg: "Publications per Faculty",
+  fpi: "Faculty with PhD Index",
+  jcr: "Journal Citation Reports",
+  in: "Impact Normalized Citations",
+  gc: "Global Citations",
+  sctc: "Scopus Citation Count",
+  fpf: "Faculty Publication Productivity",
+  gi: "Global Impact",
+  fp: "Faculty Publications",
+  inx: "Indexed Publications",
+  tp: "Teaching Performance",
+  sees: "Social/Environmental Engagement Score",
+  sdg: "Sustainable Development Goals Contribution",
+  col1: "Research Collaboration Metric 1",
+  col4: "Collaboration Metric 4",
+  col5: "Collaboration Metric 5",
+  col7: "Collaboration Metric 7",
+  jex: "Joint Exchange Programs",
+  jx: "Joint Research/Exchange",
+  ie: "International Engagement",
+  je: "Joint Publications",
+  premp: "Pre-Employment Score",
+  gphe: "Global Perception (Higher Education)",
+  ms: "Median Salary",
+  gss: "Graduate Student Strength",
+  oe: "Overall Employment Outcome",
 };
 
 function getParamLabel(key: string): string {
   // key looks like "img_ss_score" or "img_oe_mir_score"
-  const short = key
-    .replace(/^img_/, "")
-    .replace(/_score$/, "");          // e.g. "ss", "fsr", "oe_mir"
-  const abbr  = short.replace(/_/g, "").toUpperCase(); // "SS", "FSR", "OEMIR"
-  const full  = PARAM_FULL_FORMS[short] ?? PARAM_FULL_FORMS[short.replace(/_/g, "")] ?? null;
+  const short = key.replace(/^img_/, "").replace(/_score$/, ""); // e.g. "ss", "fsr", "oe_mir"
+  const abbr = short.replace(/_/g, "").toUpperCase(); // "SS", "FSR", "OEMIR"
+  const full =
+    PARAM_FULL_FORMS[short] ??
+    PARAM_FULL_FORMS[short.replace(/_/g, "")] ??
+    null;
   return full ? `${abbr} (${full})` : abbr;
 }
 const CAT_COLORS: Record<string, string> = {
@@ -971,9 +972,7 @@ function TabScores({
                     }}
                     {...rh(i)}
                   >
-                    <td style={TD}>
-  {SCORE_LABELS[k] ?? getParamLabel(k)}
-</td>
+                    <td style={TD}>{SCORE_LABELS[k] ?? getParamLabel(k)}</td>
                     <td
                       style={{
                         ...TDR,
@@ -1415,7 +1414,9 @@ function TabPlacement({
   }
 
   // Use allValid (all years) to derive programs so chart has multi-year data
-  const validForProgs = allValid.filter((m) => isRealYear(m.year) && !isBAD(m.program));
+  const validForProgs = allValid.filter(
+    (m) => isRealYear(m.year) && !isBAD(m.program),
+  );
   const pm = groupBy(validForProgs, (r) => normalizeProg(cl(r.program)));
   const allP = Array.from(pm.keys());
   const ugP = allP.filter(
@@ -1679,8 +1680,7 @@ function TabStudents({
         s.section.toLowerCase().includes("student strength") ||
         s.section.toLowerCase().includes("student details"),
     )
-    .flatMap((s) => s.metrics)
-
+    .flatMap((s) => s.metrics);
 
   return (
     <div>
@@ -2539,6 +2539,179 @@ function TabOther({ sections }: { sections: RawSection[] }) {
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// View PDF / Image buttons
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ViewFileButtons({
+  code,
+  year,
+  category,
+}: {
+  code: string;
+  year: number | null;
+  category: string;
+}) {
+  const [urls, setUrls] = React.useState<{
+    pdf: string | null;
+    image: string | null;
+  }>({
+    pdf: null,
+    image: null,
+  });
+  const [loading, setLoading] = React.useState(false);
+  const [checked, setChecked] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!code || !year || !category) return;
+    setChecked(false);
+    setLoading(true);
+    fetch(
+      `/api/institute-files?code=${encodeURIComponent(code)}&year=${year}&category=${encodeURIComponent(category)}`,
+    )
+      .then((r) => r.json())
+      .then((d) => {
+        setUrls(d);
+        setLoading(false);
+        setChecked(true);
+      })
+      .catch(() => {
+        setLoading(false);
+        setChecked(true);
+      });
+  }, [code, year, category]);
+
+  if (loading || (!urls.pdf && !urls.image && checked)) {
+    // Show nothing if both missing; show spinner while loading
+    if (loading)
+      return (
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 12,
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "0.65rem",
+              color: "var(--ink-300)",
+            }}
+          >
+            Checking files…
+          </span>
+        </div>
+      );
+    return null;
+  }
+  if (!urls.pdf && !urls.image) return null;
+
+  const btnStyle = (color: string): React.CSSProperties => ({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontFamily: "var(--font-mono)",
+    fontSize: "0.7rem",
+    letterSpacing: "0.06em",
+    textTransform: "uppercase" as const,
+    padding: "5px 14px",
+    border: `1px solid ${color}`,
+    color: color,
+    background: "transparent",
+    cursor: "pointer",
+    textDecoration: "none",
+    transition: "all 0.15s",
+  });
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        paddingTop: 12,
+        borderTop: "1px solid var(--border)",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+      }}
+    >
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "0.62rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: "var(--ink-300)",
+          marginRight: 4,
+          flexShrink: 0,
+        }}
+      >
+        Source Files
+      </span>
+      {urls.pdf && (
+        <a
+          href={urls.pdf}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={btnStyle("var(--crimson)")}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLAnchorElement).style.background =
+              "var(--crimson-pale)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLAnchorElement).style.background =
+              "transparent";
+          }}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14,2 14,8 20,8" />
+          </svg>
+          View PDF
+        </a>
+      )}
+      {urls.image && (
+        <a
+          href={urls.image}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={btnStyle("var(--teal)")}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLAnchorElement).style.background =
+              "var(--teal-pale)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLAnchorElement).style.background =
+              "transparent";
+          }}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21,15 16,10 5,21" />
+          </svg>
+          View Image
+        </a>
+      )}
+    </div>
+  );
+}
+
 export default function InstituteDetail({ hit, initialCategory }: Props) {
   const [profile, setProfile] = useState<InstituteProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2913,6 +3086,7 @@ export default function InstituteDetail({ hit, initialCategory }: Props) {
         )}
 
         {/* ── Category selector (NEW) — only shown when institute has multiple categories ── */}
+        {/* ── Category selector (NEW) — only shown when institute has multiple categories ── */}
         {allCategoriesForInst.length > 1 && (
           <div
             style={{
@@ -2963,6 +3137,13 @@ export default function InstituteDetail({ hit, initialCategory }: Props) {
             })}
           </div>
         )}
+
+        {/* ── View PDF / Image source file buttons ── */}
+        <ViewFileButtons
+          code={activeCode}
+          year={activeYear}
+          category={activeCategory}
+        />
       </div>
 
       {/* ── Tab strip ── */}

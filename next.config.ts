@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pdfjs-dist", "xlsx", "tesseract.js",'duckdb', 'duckdb-async'],
   turbopack: {},
  
+ 
   
 };
 

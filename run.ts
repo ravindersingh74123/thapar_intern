@@ -1,4 +1,4 @@
-import { startScrape } from "./score-rank-scraper.ts";
+import { startScrape } from "./score-rank-scraper";
 
 startScrape("2016").then(() => console.log("Done!"));
 
