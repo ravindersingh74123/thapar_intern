@@ -142,7 +142,68 @@ const SECTION_TAB: Record<string, TabId> = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Category colours
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Parameter full-form labels
+// ─────────────────────────────────────────────────────────────────────────────
 
+const PARAM_FULL_FORMS: Record<string, string> = {
+  "ss":     "Student Strength",
+  "fsr":    "Faculty-Student Ratio",
+  "fqe":    "Faculty Qualification & Experience",
+  "fru":    "Financial Resources Utilization",
+  "oe_mir": "Outreach & Equity Metric (Intl + Regional)",
+  "oemir":  "Outreach & Equity Metric (Intl + Regional)",
+  "pu":     "Perception (University)",
+  "qp":     "Quality Publication",
+  "ipr":    "Intellectual Property Rights (Patents)",
+  "fppp":   "Footprint of Projects & Professional Practice",
+  "gue":    "Graduation Outcome (UG Employment)",
+  "gphd":   "Graduation Outcome (PhD Students)",
+  "rd":     "Regional Diversity",
+  "wd":     "Women Diversity",
+  "escs":   "Economically Challenged Students",
+  "pcs":    "Physically Challenged Students",
+  "pr":     "Perception Score",
+  "pra":    "Publications (Research Articles)",
+  "gph":    "Publications in High Impact Journals",
+  "gqe":    "Quality of Publications",
+  "gpg":    "Publications per Faculty",
+  "fpi":    "Faculty with PhD Index",
+  "jcr":    "Journal Citation Reports",
+  "in":     "Impact Normalized Citations",
+  "gc":     "Global Citations",
+  "sctc":   "Scopus Citation Count",
+  "fpf":    "Faculty Publication Productivity",
+  "gi":     "Global Impact",
+  "fp":     "Faculty Publications",
+  "inx":    "Indexed Publications",
+  "tp":     "Teaching Performance",
+  "sees":   "Social/Environmental Engagement Score",
+  "sdg":    "Sustainable Development Goals Contribution",
+  "col1":   "Research Collaboration Metric 1",
+  "col4":   "Collaboration Metric 4",
+  "col5":   "Collaboration Metric 5",
+  "col7":   "Collaboration Metric 7",
+  "jex":    "Joint Exchange Programs",
+  "jx":     "Joint Research/Exchange",
+  "ie":     "International Engagement",
+  "je":     "Joint Publications",
+  "premp":  "Pre-Employment Score",
+  "gphe":   "Global Perception (Higher Education)",
+  "ms":     "Median Salary",
+  "gss":    "Graduate Student Strength",
+  "oe":     "Overall Employment Outcome",
+};
+
+function getParamLabel(key: string): string {
+  // key looks like "img_ss_score" or "img_oe_mir_score"
+  const short = key
+    .replace(/^img_/, "")
+    .replace(/_score$/, "");          // e.g. "ss", "fsr", "oe_mir"
+  const abbr  = short.replace(/_/g, "").toUpperCase(); // "SS", "FSR", "OEMIR"
+  const full  = PARAM_FULL_FORMS[short] ?? PARAM_FULL_FORMS[short.replace(/_/g, "")] ?? null;
+  return full ? `${abbr} (${full})` : abbr;
+}
 const CAT_COLORS: Record<string, string> = {
   Overall: "#c0392b",
   University: "#1a7a6e",
@@ -876,14 +937,7 @@ function TabScores({
         {imgCols.map((k) => (
           <ScoreBar
             key={k}
-            label={
-              SCORE_LABELS[k] ??
-              k
-                .replace("img_", "")
-                .replace("_score", "")
-                .replace(/_/g, " ")
-                .toUpperCase()
-            }
+            label={SCORE_LABELS[k] ?? getParamLabel(k)}
             score={row[k] as number | null}
             total={row[k.replace("_score", "_total")] as number | null}
           />
@@ -918,13 +972,8 @@ function TabScores({
                     {...rh(i)}
                   >
                     <td style={TD}>
-                      {SCORE_LABELS[k] ??
-                        k
-                          .replace("img_", "")
-                          .replace("_score", "")
-                          .replace(/_/g, " ")
-                          .toUpperCase()}
-                    </td>
+  {SCORE_LABELS[k] ?? getParamLabel(k)}
+</td>
                     <td
                       style={{
                         ...TDR,

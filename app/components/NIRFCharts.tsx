@@ -401,7 +401,7 @@ export function ScoresTrendChart({
   ].filter((key, _, arr) => arr.indexOf(key) === arr.indexOf(key)); // dedupe
 
   // Colour per key — TOTAL gets a distinct dark color
-  const paramColor: Record<string, string> = { TOTAL: "#1a1916" };
+  const paramColor: Record<string, string> = { "TOTAL": "#6366f1" }; // indigo — visible on white
   let ci = 0;
   for (const k of imgCols) {
     const short = PARAM_SHORT[k] ?? k;
