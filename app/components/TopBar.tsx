@@ -30,120 +30,58 @@ export default function TopBar({ user }: Props) {
     .toUpperCase();
 
   return (
-    <header
-      style={{
-        position:     "sticky",
-        top:          0,
-        zIndex:       100,
-        background:   "#0f1f2e",
-        borderBottom: "1px solid rgba(42,172,184,0.18)",
-        height:       54,
-        display:      "flex",
-        alignItems:   "center",
-        padding:      "0 24px",
-        gap:          16,
-        boxShadow:    "0 1px 12px rgba(0,0,0,0.18)",
-      }}
-    >
+    <header className="sticky top-0 z-50 h-[54px] flex items-center px-6 gap-4 border-[#ddeaed]/70 bg-white/70 backdrop-blur-xl border-b  shadow-md">
+
       {/* ── Logo ── */}
-      <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", flexShrink: 0 }}>
+      <Link href="/" className="flex items-center gap-3 shrink-0">
         <img
-          src="/logo.webp"
+          src="/logo.png"
           alt="BanavatNest"
-          style={{ height: 30, width: "auto", objectFit: "contain" }}
+          className="h-[30px] w-auto object-contain"
         />
-        <div style={{ width: 1, height: 22, background: "rgba(42,172,184,0.3)" }} />
-        <span style={{
-          fontFamily:    "var(--font-mono)",
-          fontSize:      "0.65rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          color:         "#2aacb8",
-          fontWeight:    600,
-        }}>
+        <div className="w-[1px] h-[22px] bg-[#2aacb84d]" />
+        <span className="text-[10px] font-semibold tracking-widest uppercase text-[#2aacb8]">
           NIRF Explorer
         </span>
       </Link>
 
-      {/* ── Nav links ── */}
-      <nav style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 8 }}>
+      {/* ── Nav ── */}
+      <nav className="flex items-center gap-1 ml-2">
         <NavLink href="/search">Search</NavLink>
         <NavLink href="/ranking">Rankings</NavLink>
       </nav>
 
-      {/* ── Spacer ── */}
-      <div style={{ flex: 1 }} />
+      <div className="flex-1" />
 
-      {/* ── User menu ── */}
-      <div style={{ position: "relative" }}>
+      {/* ── User Menu ── */}
+      <div className="relative">
         <button
           onClick={() => setMenuOpen((o) => !o)}
-          style={{
-            display:      "flex",
-            alignItems:   "center",
-            gap:          8,
-            background:   "transparent",
-            border:       "1px solid rgba(42,172,184,0.25)",
-            borderRadius: 4,
-            padding:      "5px 10px 5px 6px",
-            cursor:       "pointer",
-            transition:   "border-color 0.15s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.borderColor = "rgba(42,172,184,0.6)")}
-          onMouseLeave={(e) => (e.currentTarget.style.borderColor = "rgba(42,172,184,0.25)")}
+          className="flex items-center gap-2 border border-[#2aacb840] hover:border-[#2aacb8] rounded px-3 py-1.5 transition"
         >
-          {/* Avatar circle */}
-          <div style={{
-            width:          28,
-            height:         28,
-            borderRadius:   "50%",
-            background:     "linear-gradient(135deg, #2aacb8, #1a7a85)",
-            display:        "flex",
-            alignItems:     "center",
-            justifyContent: "center",
-            fontFamily:     "var(--font-mono)",
-            fontSize:       "0.62rem",
-            fontWeight:     700,
-            color:          "#fff",
-            flexShrink:     0,
-            letterSpacing:  "0.05em",
-          }}>
+          {/* Avatar */}
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#2aacb8] to-[#1a7a85] flex items-center justify-center text-white text-[10px] font-bold">
             {initials}
           </div>
-          <div style={{ textAlign: "left" }}>
-            <p style={{
-              fontFamily: "var(--font-body)",
-              fontSize:   "0.75rem",
-              fontWeight: 600,
-              color:      "#e8f4f5",
-              lineHeight: 1.2,
-              margin:     0,
-              maxWidth:   140,
-              overflow:   "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}>
+
+          <div className="text-left max-w-[140px]">
+            <p className="text-xs font-semibold text-[#e8f4f5] truncate">
               {user.name}
             </p>
-            <p style={{
-              fontFamily:   "var(--font-mono)",
-              fontSize:     "0.58rem",
-              color:        "rgba(42,172,184,0.7)",
-              lineHeight:   1.2,
-              margin:       0,
-              maxWidth:     140,
-              overflow:     "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace:   "nowrap",
-            }}>
+            <p className="text-[10px] text-[#2aacb8aa] truncate">
               {user.email}
             </p>
           </div>
+
           {/* Chevron */}
           <svg
-            width="10" height="10" viewBox="0 0 24 24" fill="none"
-            stroke="rgba(42,172,184,0.6)" strokeWidth="2.5"
-            style={{ transform: menuOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}
+            className={`w-3 h-3 text-[#2aacb899] transition ${
+              menuOpen ? "rotate-180" : ""
+            }`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
           >
             <polyline points="6,9 12,15 18,9" />
           </svg>
@@ -152,69 +90,45 @@ export default function TopBar({ user }: Props) {
         {/* Dropdown */}
         {menuOpen && (
           <>
-            {/* Click-outside overlay */}
+            {/* Overlay */}
             <div
-              style={{ position: "fixed", inset: 0, zIndex: 10 }}
+              className="fixed inset-0 z-10"
               onClick={() => setMenuOpen(false)}
             />
-            <div style={{
-              position:     "absolute",
-              top:          "calc(100% + 6px)",
-              right:        0,
-              zIndex:       20,
-              background:   "#0f1f2e",
-              border:       "1px solid rgba(42,172,184,0.2)",
-              boxShadow:    "0 8px 24px rgba(0,0,0,0.3)",
-              minWidth:     180,
-              animation:    "fadeUp 0.15s ease both",
-            }}>
-              <div style={{
-                padding:      "12px 16px",
-                borderBottom: "1px solid rgba(42,172,184,0.12)",
-              }}>
-                <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.58rem", color: "rgba(42,172,184,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 2px" }}>
+
+            <div className="absolute right-0 mt-2 z-20 w-[190px] bg-[#0f1f2e] border border-[#2aacb833] shadow-xl animate-fadeUp">
+              
+              {/* User Info */}
+              <div className="px-4 py-3 border-b border-[#2aacb820]">
+                <p className="text-[10px] uppercase tracking-wider text-[#2aacb880]">
                   Signed in as
                 </p>
-                <p style={{ fontFamily: "var(--font-body)", fontSize: "0.78rem", color: "#e8f4f5", margin: 0, fontWeight: 500 }}>
+                <p className="text-sm text-white font-medium">
                   {user.name}
                 </p>
-                <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.62rem", color: "rgba(42,172,184,0.6)", margin: 0 }}>
+                <p className="text-xs text-[#2aacb8aa]">
                   {user.email}
                 </p>
               </div>
 
-              <div style={{ padding: "6px 0" }}>
-                <DropdownItem href="/search" icon="🔍" label="Search Institutes" onClick={() => setMenuOpen(false)} />
-                <DropdownItem href="/ranking" icon="📊" label="View Rankings" onClick={() => setMenuOpen(false)} />
+              {/* Links */}
+              <div className="py-1">
+                <DropdownItem href="/search" label="Search Institutes" />
+                <DropdownItem href="/ranking" label="View Rankings" />
               </div>
 
-              <div style={{ padding: "6px 0", borderTop: "1px solid rgba(42,172,184,0.12)" }}>
+              {/* Logout */}
+              <div className="border-t border-[#2aacb820] py-1">
                 <button
                   onClick={handleLogout}
                   disabled={loggingOut}
-                  style={{
-                    width:      "100%",
-                    display:    "flex",
-                    alignItems: "center",
-                    gap:        8,
-                    padding:    "9px 16px",
-                    background: "transparent",
-                    border:     "none",
-                    cursor:     loggingOut ? "wait" : "pointer",
-                    fontFamily: "var(--font-body)",
-                    fontSize:   "0.78rem",
-                    color:      loggingOut ? "rgba(255,100,80,0.4)" : "rgba(255,100,80,0.8)",
-                    textAlign:  "left",
-                    transition: "background 0.1s, color 0.1s",
-                  }}
-                  onMouseEnter={(e) => { if (!loggingOut) e.currentTarget.style.background = "rgba(255,100,80,0.08)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition
+                    ${
+                      loggingOut
+                        ? "text-red-400/40 cursor-wait"
+                        : "text-red-400 hover:bg-red-500/10"
+                    }`}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                    <polyline points="16,17 21,12 16,7"/>
-                    <line x1="21" y1="12" x2="9" y2="12"/>
-                  </svg>
                   {loggingOut ? "Signing out…" : "Sign Out"}
                 </button>
               </div>
@@ -226,65 +140,37 @@ export default function TopBar({ user }: Props) {
   );
 }
 
-// ── Small nav link ────────────────────────────────────────────────────────────
-
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+/* ── Nav Link ── */
+function NavLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
   return (
     <Link
       href={href}
-      style={{
-        fontFamily:    "var(--font-mono)",
-        fontSize:      "0.65rem",
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        color:         "rgba(200,230,232,0.6)",
-        textDecoration:"none",
-        padding:       "4px 10px",
-        borderRadius:  3,
-        transition:    "color 0.15s, background 0.15s",
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLAnchorElement).style.color = "#2aacb8";
-        (e.currentTarget as HTMLAnchorElement).style.background = "rgba(42,172,184,0.08)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLAnchorElement).style.color = "rgba(200,230,232,0.6)";
-        (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
-      }}
+      className="text-[10px] uppercase tracking-wide text-[#c8e6e8aa] hover:text-[#2aacb8] hover:bg-[#2aacb815] px-3 py-1 rounded transition"
     >
       {children}
     </Link>
   );
 }
 
-// ── Dropdown menu item ────────────────────────────────────────────────────────
-
-function DropdownItem({ href, icon, label, onClick }: { href: string; icon: string; label: string; onClick: () => void }) {
+/* ── Dropdown Item ── */
+function DropdownItem({
+  href,
+  label,
+}: {
+  href: string;
+  label: string;
+}) {
   return (
     <Link
       href={href}
-      onClick={onClick}
-      style={{
-        display:        "flex",
-        alignItems:     "center",
-        gap:            8,
-        padding:        "9px 16px",
-        fontFamily:     "var(--font-body)",
-        fontSize:       "0.78rem",
-        color:          "rgba(200,230,232,0.75)",
-        textDecoration: "none",
-        transition:     "background 0.1s, color 0.1s",
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLAnchorElement).style.background = "rgba(42,172,184,0.08)";
-        (e.currentTarget as HTMLAnchorElement).style.color = "#2aacb8";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
-        (e.currentTarget as HTMLAnchorElement).style.color = "rgba(200,230,232,0.75)";
-      }}
+      className="block px-4 py-2 text-sm text-[#c8e6e8cc] hover:text-[#2aacb8] hover:bg-[#2aacb815] transition"
     >
-      <span style={{ fontSize: "0.8rem" }}>{icon}</span>
       {label}
     </Link>
   );
