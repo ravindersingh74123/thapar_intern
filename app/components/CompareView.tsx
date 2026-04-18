@@ -531,6 +531,7 @@ function PillBar({
   const allOn = pills.every((p) => active.has(p.key));
   return (
     <div
+      data-pillbar="true"
       style={{
         display: "flex",
         flexWrap: "wrap",
@@ -798,6 +799,12 @@ function NIRFScoreChart({
     return pt;
   });
 
+  const chartRef = React.useRef<HTMLDivElement>(null);
+  const dlFilename = `nirf-score-trends-${codes.join("-")}`
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .slice(0, 80);
+
   if (!available.length)
     return (
       <div
@@ -813,17 +820,29 @@ function NIRFScoreChart({
     );
 
   return (
-    <>
-      <PillBar
-        pills={available.map((p) => ({
-          key: p.key,
-          label: `${p.short} (${p.label})`,
-          color: p.color,
-        }))}
-        active={active}
-        onToggle={toggle}
-        onAll={toggleAll}
-      />
+    <div ref={chartRef}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 24px 0 0",
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <PillBar
+            pills={available.map((p) => ({
+              key: p.key,
+              label: `${p.short} (${p.label})`,
+              color: p.color,
+            }))}
+            active={active}
+            onToggle={toggle}
+            onAll={toggleAll}
+          />
+        </div>
+        <DownloadChartBtn targetRef={chartRef} filename={dlFilename} />
+      </div>
       <div style={{ padding: "20px 24px 8px" }}>
         <ResponsiveContainer width="100%" height={360}>
           <LineChart
@@ -959,12 +978,11 @@ function NIRFScoreChart({
           </LineChart>
         </ResponsiveContainer>
       </div>
-    </>
+    </div>
   );
 }
 
 // ── Radar (per-institute category aware) ──────────────────────────────────────
-
 function ScoreRadar({
   profiles,
   codes,
@@ -999,20 +1017,36 @@ function ScoreRadar({
     return pt;
   });
 
+  const radarRef = React.useRef<HTMLDivElement>(null);
+  const radarFilename = `nirf-radar-${codes.join("-")}`
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .slice(0, 80);
+
   return (
-    <div style={{ padding: "16px 24px 8px" }}>
-      <p
+    <div ref={radarRef} style={{ padding: "16px 24px 8px" }}>
+      <div
         style={{
-          fontFamily: MONO,
-          fontSize: "0.6rem",
-          color: INK300,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           marginBottom: 8,
         }}
       >
-        Score Profile Radar — % of parameter maximum
-      </p>
+        <p
+          style={{
+            fontFamily: MONO,
+            fontSize: "0.6rem",
+            color: INK300,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            margin: 0,
+          }}
+        >
+          Score Profile Radar — % of parameter maximum
+        </p>
+        <DownloadChartBtn targetRef={radarRef} filename={radarFilename} />
+      </div>
       <ResponsiveContainer width="100%" height={380}>
         <RadarChart
           data={data}
@@ -1655,6 +1689,138 @@ function SectionChart({
         </div>
       )}
     </>
+  );
+}
+
+// ── Chart download helper ─────────────────────────────────────────────────────
+
+function DownloadChartBtn({
+  targetRef,
+  filename,
+}: {
+  targetRef: React.RefObject<HTMLDivElement | null>;
+  filename: string;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const handle = async () => {
+    if (!targetRef.current) return;
+    setBusy(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const el = targetRef.current;
+
+      // Snapshot original styles
+      const origOverflow = el.style.overflow;
+      const origHeight = el.style.height;
+      const origMaxH = el.style.maxHeight;
+
+      // Expand to full scroll height so nothing is clipped
+      el.style.overflow = "visible";
+      el.style.height = "auto";
+      el.style.maxHeight = "none";
+
+      // Also temporarily un-wrap the pill bar so all pills are visible
+      const pillBar = el.querySelector<HTMLElement>("[data-pillbar]");
+      let pillOrigWrap = "";
+      if (pillBar) {
+        pillOrigWrap = pillBar.style.flexWrap;
+        pillBar.style.flexWrap = "wrap";
+      }
+
+      // Let the DOM reflow
+      await new Promise((r) => setTimeout(r, 80));
+
+      const canvas = await html2canvas(el, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        // Capture the full scrollable area
+        width: el.scrollWidth,
+        height: el.scrollHeight,
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+      });
+
+      // Restore styles
+      el.style.overflow = origOverflow;
+      el.style.height = origHeight;
+      el.style.maxHeight = origMaxH;
+      if (pillBar) pillBar.style.flexWrap = pillOrigWrap;
+
+      const link = document.createElement("a");
+      link.download = `${filename}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      onClick={handle}
+      disabled={busy}
+      title="Download as PNG"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontFamily: MONO,
+        fontSize: "0.6rem",
+        letterSpacing: "0.07em",
+        textTransform: "uppercase" as const,
+        padding: "3px 10px",
+        border: `1px solid ${INK300}`,
+        background: WHITE,
+        color: INK300,
+        cursor: busy ? "wait" : "pointer",
+        transition: "all 0.15s",
+        flexShrink: 0,
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = CRIMSON;
+        e.currentTarget.style.color = CRIMSON;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = INK300;
+        e.currentTarget.style.color = INK300;
+      }}
+    >
+      {busy ? (
+        <>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            style={{ animation: "spin 1s linear infinite" }}
+          >
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
+          </svg>{" "}
+          Saving…
+        </>
+      ) : (
+        <>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7,10 12,15 17,10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>{" "}
+          ↓ PNG
+        </>
+      )}
+    </button>
   );
 }
 

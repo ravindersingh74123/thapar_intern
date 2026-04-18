@@ -1235,113 +1235,295 @@
 
 
 
+// import Link from "next/link";
+
+// export interface SearchHit {
+//   institute_code: string;
+//   institute_name: string;
+//   category: string;
+//   best_year: number;
+//   img_total: number | null;
+//   allCodes?: string[]; // all codes for this institute across categories
+// }
+
+// export default function HomePage() {
+//   return (
+//     <main
+//       style={{
+//         minHeight: "100vh",
+//         background: "var(--paper)",
+//         display: "flex",
+//         alignItems: "center",
+//         justifyContent: "center",
+//         padding: "24px",
+//       }}
+//     >
+//       <div
+//         style={{
+//           textAlign: "center",
+//           maxWidth: 720,
+//           width: "100%",
+//         }}
+//       >
+//         {/* Heading */}
+//         <h1
+//           style={{
+//             fontFamily: "var(--font-display)",
+//             fontStyle: "italic",
+//             fontSize: "clamp(2.2rem, 5vw, 3.5rem)",
+//             color: "var(--ink-900)",
+//             lineHeight: 1.1,
+//             marginBottom: 16,
+//           }}
+//         >
+//           National Institutional
+//           <br />
+//           Ranking Framework
+//         </h1>
+
+//         {/* Subtitle */}
+//         <p
+//           style={{
+//             fontFamily: "var(--font-body)",
+//             fontSize: "1rem",
+//             color: "var(--ink-500)",
+//             marginBottom: 32,
+//           }}
+//         >
+//           Explore institutes, compare them, and analyze rankings — all in one place.
+//         </p>
+
+//         {/* Navigation Buttons */}
+//         <div
+//           style={{
+//             display: "flex",
+//             justifyContent: "center",
+//             gap: 12,
+//             flexWrap: "wrap",
+//           }}
+//         >
+//           <Link
+//             href="/search"
+//             style={{
+//               textDecoration: "none",
+//               border: "1px solid var(--crimson)",
+//               padding: "10px 18px",
+//               fontSize: "0.9rem",
+//               color: "var(--crimson)",
+//               transition: "all 0.15s",
+//             }}
+//           >
+//             🔍 Search Institutes
+//           </Link>
+
+//           <Link
+//             href="/ranking"
+//             style={{
+//               textDecoration: "none",
+//               border: "1px solid var(--border)",
+//               padding: "10px 18px",
+//               fontSize: "0.9rem",
+//               color: "var(--ink-700)",
+//             }}
+//           >
+//             📊 View Rankings
+//           </Link>
+//         </div>
+
+//         {/* Hint */}
+//         <p
+//           style={{
+//             marginTop: 28,
+//             fontFamily: "var(--font-mono)",
+//             fontSize: "0.75rem",
+//             color: "var(--ink-300)",
+//           }}
+//         >
+//           Try exploring IITs, IISc, or search by institute code
+//         </p>
+//       </div>
+//     </main>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// app/page.tsx
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getSessionFromCookies } from "./api/lib/auth";
+import TopBar from "./components/TopBar";
 
 export interface SearchHit {
   institute_code: string;
   institute_name: string;
-  category: string;
-  best_year: number;
-  img_total: number | null;
-  allCodes?: string[]; // all codes for this institute across categories
+  category:       string;
+  best_year:      number;
+  img_total:      number | null;
+  allCodes?:      string[];
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await getSessionFromCookies();
+  if (!session) redirect("/login");
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "var(--paper)",
-        display: "flex",
-        alignItems: "center",
+    <div style={{ minHeight: "100vh", background: "var(--paper)", display: "flex", flexDirection: "column" }}>
+      <TopBar user={{ name: session.name, email: session.email }} />
+
+      <main style={{
+        flex:           1,
+        display:        "flex",
+        alignItems:     "center",
         justifyContent: "center",
-        padding: "24px",
+        padding:        "24px",
+      }}>
+        <div style={{ textAlign: "center", maxWidth: 720, width: "100%" }}>
+
+          <h1 style={{
+            fontFamily:   "var(--font-display)",
+            fontStyle:    "italic",
+            fontSize:     "clamp(2.2rem, 5vw, 3.5rem)",
+            color:        "var(--ink-900)",
+            lineHeight:   1.1,
+            marginBottom: 16,
+          }}>
+            National Institutional<br />Ranking Framework
+          </h1>
+
+          <p style={{
+            fontFamily:   "var(--font-body)",
+            fontSize:     "1rem",
+            color:        "var(--ink-500)",
+            marginBottom: 32,
+          }}>
+            Explore institutes, compare them, and analyze rankings — all in one place.
+          </p>
+
+          <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
+            <NavCard
+              href="/search"
+              icon="🔍"
+              title="Search Institutes"
+              desc="Find any institute by name or code and explore its full ranking history"
+              accent="#2aacb8"
+            />
+            <NavCard
+              href="/ranking"
+              icon="📊"
+              title="View Rankings"
+              desc="Browse the official NIRF rankings table with parameter breakdown"
+              accent="#1a6b73"
+            />
+          </div>
+
+          <p style={{
+            marginTop:  32,
+            fontFamily: "var(--font-mono)",
+            fontSize:   "0.72rem",
+            color:      "var(--ink-300)",
+          }}>
+            Try exploring IITs, IISc, or search by institute code
+          </p>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function NavCard({
+  href, icon, title, desc, accent,
+}: {
+  href:   string;
+  icon:   string;
+  title:  string;
+  desc:   string;
+  accent: string;
+}) {
+  return (
+    <Link
+      href={href}
+      style={{
+        textDecoration: "none",
+        display:        "flex",
+        flexDirection:  "column",
+        alignItems:     "flex-start",
+        gap:            8,
+        padding:        "20px 24px",
+        border:         `1px solid ${accent}40`,
+        background:     "var(--white)",
+        boxShadow:      "var(--shadow-sm)",
+        width:          240,
+        transition:     "box-shadow 0.15s, border-color 0.15s, transform 0.15s",
+        textAlign:      "left",
+      }}
+      onMouseEnter={(e) => {
+        const el = e.currentTarget as HTMLAnchorElement;
+        el.style.boxShadow   = `0 4px 16px ${accent}28`;
+        el.style.borderColor = `${accent}90`;
+        el.style.transform   = "translateY(-2px)";
+      }}
+      onMouseLeave={(e) => {
+        const el = e.currentTarget as HTMLAnchorElement;
+        el.style.boxShadow   = "var(--shadow-sm)";
+        el.style.borderColor = `${accent}40`;
+        el.style.transform   = "none";
       }}
     >
-      <div
-        style={{
-          textAlign: "center",
-          maxWidth: 720,
-          width: "100%",
-        }}
-      >
-        {/* Heading */}
-        <h1
-          style={{
-            fontFamily: "var(--font-display)",
-            fontStyle: "italic",
-            fontSize: "clamp(2.2rem, 5vw, 3.5rem)",
-            color: "var(--ink-900)",
-            lineHeight: 1.1,
-            marginBottom: 16,
-          }}
-        >
-          National Institutional
-          <br />
-          Ranking Framework
-        </h1>
-
-        {/* Subtitle */}
-        <p
-          style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "1rem",
-            color: "var(--ink-500)",
-            marginBottom: 32,
-          }}
-        >
-          Explore institutes, compare them, and analyze rankings — all in one place.
-        </p>
-
-        {/* Navigation Buttons */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <Link
-            href="/search"
-            style={{
-              textDecoration: "none",
-              border: "1px solid var(--crimson)",
-              padding: "10px 18px",
-              fontSize: "0.9rem",
-              color: "var(--crimson)",
-              transition: "all 0.15s",
-            }}
-          >
-            🔍 Search Institutes
-          </Link>
-
-          <Link
-            href="/ranking"
-            style={{
-              textDecoration: "none",
-              border: "1px solid var(--border)",
-              padding: "10px 18px",
-              fontSize: "0.9rem",
-              color: "var(--ink-700)",
-            }}
-          >
-            📊 View Rankings
-          </Link>
-        </div>
-
-        {/* Hint */}
-        <p
-          style={{
-            marginTop: 28,
-            fontFamily: "var(--font-mono)",
-            fontSize: "0.75rem",
-            color: "var(--ink-300)",
-          }}
-        >
-          Try exploring IITs, IISc, or search by institute code
-        </p>
-      </div>
-    </main>
+      <span style={{ fontSize: "1.4rem" }}>{icon}</span>
+      <p style={{
+        fontFamily: "var(--font-body)",
+        fontWeight: 700,
+        fontSize:   "0.95rem",
+        color:      accent,
+        margin:     0,
+      }}>
+        {title}
+      </p>
+      <p style={{
+        fontFamily: "var(--font-body)",
+        fontSize:   "0.78rem",
+        color:      "var(--ink-500)",
+        margin:     0,
+        lineHeight: 1.5,
+      }}>
+        {desc}
+      </p>
+    </Link>
   );
 }

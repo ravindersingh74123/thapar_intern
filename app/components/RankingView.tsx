@@ -41,6 +41,70 @@ const INK500 = "var(--ink-500)";
 const INK900 = "var(--ink-900)";
 const WHITE = "var(--white)";
 
+// ── Excel download helper ──────────────────────────────────────────────────
+
+function escapeCell(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  const s = String(val);
+  // If it contains comma, quote, or newline — wrap in quotes
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function downloadExcel(
+  rows: RankRow[],
+  year: number,
+  category: string,
+  activeParams: string[],
+) {
+  // Build header row
+  const headers = [
+    "Year",
+    "Category",
+    "Rank",
+    "Institute Name",
+    "Institute Code",
+    "Score",
+    ...activeParams.map(
+      (p) =>
+        PARAM_LABELS[p] ??
+        p.replace("img_", "").replace("_score", "").toUpperCase(),
+    ),
+  ];
+
+  // Build data rows
+  const dataRows = rows.map((row) => [
+    year,
+    category,
+    row.nirf_rank ?? "",
+    row.institute_name,
+    row.institute_code,
+    row.nirf_score != null ? row.nirf_score.toFixed(2) : "",
+    ...activeParams.map((p) => {
+      const v = (row as unknown as Record<string, unknown>)[p];
+      return v != null ? Number(v).toFixed(2) : "";
+    }),
+  ]);
+
+  // Assemble CSV content (Excel opens CSV fine)
+  const lines = [
+    headers.map(escapeCell).join(","),
+    ...dataRows.map((r) => r.map(escapeCell).join(",")),
+  ];
+  const csv = lines.join("\n");
+
+  // Trigger download
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM for Excel UTF-8
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `nirf-rankings-${year}-${category.toLowerCase().replace(/\s+/g, "-")}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 const PARAM_LABELS: Record<string, string> = {
   img_ss_score: "SS",
   img_fsr_score: "FSR",
@@ -423,6 +487,60 @@ export default function RankingView({ onSelectInstitute }: Props) {
           />
         </div>
       </div>
+
+      {/* ── Download Excel button ── */}
+      {!loading && filtered.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: 12,
+          }}
+        >
+          <button
+            onClick={() =>
+              downloadExcel(filtered, selYear, selCat, activeParams)
+            }
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontFamily: MONO,
+              fontSize: "0.68rem",
+              letterSpacing: "0.07em",
+              textTransform: "uppercase",
+              padding: "6px 16px",
+              border: `1px solid var(--ink-300)`,
+              background: "transparent",
+              color: "var(--ink-500)",
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--crimson)";
+              e.currentTarget.style.color = "var(--crimson)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--ink-300)";
+              e.currentTarget.style.color = "var(--ink-500)";
+            }}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7,10 12,15 17,10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            ↓ Download Excel
+          </button>
+        </div>
+      )}
 
       {/* ── Table ── */}
       {loading ? (

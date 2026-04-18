@@ -14,6 +14,7 @@
  */
 
 import React, { useState } from "react";
+import DownloadChartButton from "@/app/components/DownloadChartButton";
 import {
   LineChart,
   Line,
@@ -53,8 +54,17 @@ export function ChartCard({
   title: string;
   children: React.ReactNode;
 }) {
+  // Stable filename derived from title
+  const filename = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60);
+
   return (
     <div
+      className="chart-capture"
+      data-chart-card="true"
       style={{
         background: "var(--white)",
         border: `1px solid ${BORDER}`,
@@ -63,20 +73,30 @@ export function ChartCard({
         boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
       }}
     >
-      <p
+      <div
         style={{
-          fontFamily: MONO,
-          fontSize: "0.6rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-          color: CRIMSON,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           marginBottom: 14,
           paddingBottom: 6,
           borderBottom: `1px solid ${BORDER}`,
         }}
       >
-        {title}
-      </p>
+        <p
+          style={{
+            fontFamily: MONO,
+            fontSize: "0.6rem",
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+            color: CRIMSON,
+            margin: 0,
+          }}
+        >
+          {title}
+        </p>
+        <DownloadChartButton filename={filename} />
+      </div>
       {children}
     </div>
   );
